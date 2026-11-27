@@ -13,6 +13,7 @@ import {
   Film, HardDrive, User, PhoneCall, Camera, Cpu, Server, Database
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { authFetchJson } from '@/lib/client-auth-fetch';
 import { compressImageToDataUrl } from '@/lib/image-compression';
 import CountryPhoneInput from '@/components/ui/CountryPhoneInput';
 import { 
@@ -138,7 +139,7 @@ const DRIVE_TYPES = [
   { id: 'OTHER', label: 'Other / Pen Drive', desc: 'Portable Transfer Media', badge: 'Media' },
 ];
 
-type SettingsTab = 'profile' | 'leads' | 'functions' | 'crew_roles' | 'post_production' | 'quotations' | 'storage' | 'finance' | 'billing';
+type SettingsTab = 'profile' | 'leads' | 'functions' | 'crew_roles' | 'team_partners' | 'post_production' | 'quotations' | 'storage' | 'finance' | 'billing';
 type QuoteSubTab = 'deliverables' | 'special_addons' | 'paid_addons' | 'default_functions' | 'payment_steps' | 'theme_terms' | 'ai_training';
 
 interface DropdownItem {
@@ -297,6 +298,12 @@ const SETTINGS_NAV_ITEMS: {
     icon: Users,
   },
   {
+    id: 'team_partners',
+    title: 'Team & Partners',
+    subtitle: 'Hide members & commercials security PIN with Email OTP recovery.',
+    icon: ShieldCheck,
+  },
+  {
     id: 'post_production',
     title: 'Post-Production',
     subtitle: 'Pipeline workflows, edit stages, and client delivery presets.',
@@ -332,6 +339,121 @@ export default function SettingsPage() {
   const router = useRouter();
   const { workspaceId: contextWsId, userId } = useWorkspace();
   const [activeTab, setActiveTab] = useState<SettingsTab>('profile');
+  const [teamHasPin, setTeamHasPin] = useState(false);
+  const [teamOwnerEmail, setTeamOwnerEmail] = useState('');
+  const [teamPinInput, setTeamPinInput] = useState('');
+  const [teamOtpSent, setTeamOtpSent] = useState(false);
+  const [teamOtpInput, setTeamOtpInput] = useState('');
+  const [teamPinBusy, setTeamPinBusy] = useState(false);
+  const [teamPinMsg, setTeamPinMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const sp = new URLSearchParams(window.location.search);
+      const t = sp.get('tab') as SettingsTab | null;
+      if (t) setActiveTab(t);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!effectiveWsId) return;
+    authFetchJson(`/api/workspace/team/pin?workspace_id=${encodeURIComponent(effectiveWsId)}`)
+      .then((res) => {
+        if (res?.success) {
+          setTeamHasPin(Boolean(res.hasPin));
+          if (res.ownerEmail) setTeamOwnerEmail(res.ownerEmail);
+        }
+      })
+      .catch(() => {});
+  }, [effectiveWsId]);
+
+  const handleSetInitialTeamPin = async () => {
+    const clean = teamPinInput.replace(/\D/g, '');
+    if (clean.length < 4 || clean.length > 6) {
+      setTeamPinMsg({ type: 'err', text: 'PIN must be 4 to 6 digits.' });
+      return;
+    }
+    setTeamPinBusy(true);
+    setTeamPinMsg(null);
+    try {
+      const res = await authFetchJson('/api/workspace/team/pin', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'set_initial_pin', workspace_id: effectiveWsId, pin: clean }),
+      });
+      if (res?.success) {
+        setTeamHasPin(true);
+        setTeamPinInput('');
+        setTeamPinMsg({ type: 'ok', text: 'Team & Partners Hide PIN saved successfully!' });
+      } else {
+        setTeamPinMsg({ type: 'err', text: res?.error || 'Failed to save PIN.' });
+      }
+    } catch (e: any) {
+      setTeamPinMsg({ type: 'err', text: e?.message || 'Failed to save PIN.' });
+    } finally {
+      setTeamPinBusy(false);
+    }
+  };
+
+  const handleRequestTeamOtp = async () => {
+    setTeamPinBusy(true);
+    setTeamPinMsg(null);
+    try {
+      const res = await authFetchJson('/api/workspace/team/pin', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'request_otp', workspace_id: effectiveWsId }),
+      });
+      if (res?.success) {
+        setTeamOtpSent(true);
+        if (res.sentTo) setTeamOwnerEmail(res.sentTo);
+        setTeamPinMsg({ type: 'ok', text: `6-digit OTP sent to ${res.sentTo || teamOwnerEmail || 'your email'}.` });
+      } else {
+        setTeamPinMsg({ type: 'err', text: res?.error || 'Failed to send OTP.' });
+      }
+    } catch (e: any) {
+      setTeamPinMsg({ type: 'err', text: e?.message || 'Failed to send OTP.' });
+    } finally {
+      setTeamPinBusy(false);
+    }
+  };
+
+  const handleVerifyOtpAndSetTeamPin = async () => {
+    const cleanOtp = teamOtpInput.trim();
+    const cleanPin = teamPinInput.replace(/\D/g, '');
+    if (cleanOtp.length !== 6) {
+      setTeamPinMsg({ type: 'err', text: 'Please enter the 6-digit OTP from your email.' });
+      return;
+    }
+    if (cleanPin.length < 4 || cleanPin.length > 6) {
+      setTeamPinMsg({ type: 'err', text: 'New PIN must be 4 to 6 digits.' });
+      return;
+    }
+    setTeamPinBusy(true);
+    setTeamPinMsg(null);
+    try {
+      const res = await authFetchJson('/api/workspace/team/pin', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'verify_otp_and_set_pin',
+          workspace_id: effectiveWsId,
+          otp: cleanOtp,
+          newPin: cleanPin,
+        }),
+      });
+      if (res?.success) {
+        setTeamHasPin(true);
+        setTeamOtpSent(false);
+        setTeamOtpInput('');
+        setTeamPinInput('');
+        setTeamPinMsg({ type: 'ok', text: 'Team & Partners PIN updated successfully!' });
+      } else {
+        setTeamPinMsg({ type: 'err', text: res?.error || 'Invalid OTP or failed to update PIN.' });
+      }
+    } catch (e: any) {
+      setTeamPinMsg({ type: 'err', text: e?.message || 'Invalid OTP or failed to update PIN.' });
+    } finally {
+      setTeamPinBusy(false);
+    }
+  };
   const [navSearch, setNavSearch] = useState('');
   const [loading, setLoading] = useState(() => !memCachedHasLoadedSettings);
   const [saving, setSaving] = useState(false);
@@ -2558,6 +2680,137 @@ export default function SettingsPage() {
             )}
 
             {/* 1.7 POST-PRODUCTION DELIVERABLES & STATUSES SETTINGS */}
+            {activeTab === 'team_partners' && (
+              <div className="bg-white border border-amber-200/90 rounded-2xl p-6 shadow-xs space-y-6">
+                <div className="flex items-center gap-3 border-b border-amber-100 pb-4">
+                  <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
+                    <ShieldCheck className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-extrabold text-amber-950">Team &amp; Partners Security (`/workspace/team`)</h2>
+                    <p className="text-xs font-medium text-zinc-500">
+                      Set a Studio Owner PIN to protect Hidden Team Members &amp; their commercial amounts. Changing or resetting the PIN requires Email OTP verification.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-5 rounded-2xl bg-amber-50/60 border border-amber-200/80 space-y-4">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2.5">
+                      <Lock className="w-4 h-4 text-amber-700" />
+                      <span className="text-sm font-black text-amber-950">
+                        Hide Members Security PIN
+                      </span>
+                    </div>
+                    <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-black border ${
+                      teamHasPin
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : 'bg-zinc-100 text-zinc-600 border-zinc-200'
+                    }`}>
+                      {teamHasPin ? 'PIN Active' : 'No PIN Set'}
+                    </span>
+                  </div>
+
+                  {!teamHasPin ? (
+                    <div className="space-y-3">
+                      <p className="text-xs text-zinc-600 font-medium">
+                        Create a 4 to 6 digit PIN. Anyone clicking the <strong>Hidden</strong> tab in Team &amp; Partners will need this PIN to view hidden members and their Agreed/Paid/Due amounts.
+                      </p>
+                      <div className="flex flex-wrap items-center gap-3">
+                        <input
+                          type="password"
+                          maxLength={6}
+                          value={teamPinInput}
+                          onChange={(e) => setTeamPinInput(e.target.value.replace(/[^0-9]/g, ''))}
+                          placeholder="Enter 4-6 digit PIN"
+                          className="w-48 px-3.5 py-2 bg-white border border-amber-300 rounded-xl text-center text-sm font-black tracking-widest font-mono text-amber-950 focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          disabled={teamPinBusy}
+                          onClick={handleSetInitialTeamPin}
+                          className="px-4 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-bold cursor-pointer disabled:opacity-50"
+                        >
+                          {teamPinBusy ? 'Saving...' : 'Set Security PIN'}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <p className="text-xs text-zinc-600 font-medium">
+                        To <strong>Change</strong> or <strong>Reset (Forgot)</strong> your Hide PIN, verify your identity with a 6-digit OTP sent to the Studio Owner email{teamOwnerEmail ? ` (${teamOwnerEmail})` : ''}.
+                      </p>
+
+                      {!teamOtpSent ? (
+                        <button
+                          type="button"
+                          disabled={teamPinBusy}
+                          onClick={handleRequestTeamOtp}
+                          className="px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                        >
+                          <Mail className="w-4 h-4" />
+                          <span>{teamPinBusy ? 'Sending OTP...' : 'Send Email OTP to Change / Reset PIN'}</span>
+                        </button>
+                      ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+                          <div>
+                            <label className="text-[11px] font-bold text-zinc-700 block mb-1">6-Digit Email OTP</label>
+                            <input
+                              type="text"
+                              maxLength={6}
+                              value={teamOtpInput}
+                              onChange={(e) => setTeamOtpInput(e.target.value.replace(/[^0-9]/g, ''))}
+                              placeholder="123456"
+                              className="w-full px-3.5 py-2 bg-white border border-amber-300 rounded-xl text-center text-sm font-black tracking-widest font-mono text-amber-950 focus:outline-none"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[11px] font-bold text-zinc-700 block mb-1">New 4-6 Digit PIN</label>
+                            <input
+                              type="password"
+                              maxLength={6}
+                              value={teamPinInput}
+                              onChange={(e) => setTeamPinInput(e.target.value.replace(/[^0-9]/g, ''))}
+                              placeholder="New PIN"
+                              className="w-full px-3.5 py-2 bg-white border border-amber-300 rounded-xl text-center text-sm font-black tracking-widest font-mono text-amber-950 focus:outline-none"
+                            />
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              disabled={teamPinBusy}
+                              onClick={handleVerifyOtpAndSetTeamPin}
+                              className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer disabled:opacity-50"
+                            >
+                              {teamPinBusy ? 'Verifying...' : 'Verify OTP & Save PIN'}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={teamPinBusy}
+                              onClick={handleRequestTeamOtp}
+                              className="px-3 py-2 rounded-xl bg-white border border-amber-300 text-amber-900 text-xs font-bold cursor-pointer"
+                            >
+                              Resend
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {teamPinMsg && (
+                    <div className={`p-3 rounded-xl text-xs font-bold border ${
+                      teamPinMsg.type === 'ok'
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                        : 'bg-rose-50 text-rose-700 border-rose-200'
+                    }`}>
+                      {teamPinMsg.text}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {activeTab === 'post_production' && (
               <PostProductionSettingsTab
                 workspaceId={workspaceId}

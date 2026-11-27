@@ -1,8 +1,8 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
-  ShieldCheck, UserCheck, Users, Users2, FileText, Film, DollarSign, Eye, Pencil, Trash2 
+  ShieldCheck, UserCheck, Users, Users2, FileText, Film, DollarSign, Eye, Pencil, Trash2, MoreVertical, EyeOff 
 } from 'lucide-react';
 
 interface TeamTableRowProps {
@@ -12,6 +12,8 @@ interface TeamTableRowProps {
   handleDeleteMember: (memberId: string) => void;
   handleOpenVendorDeliverables?: (member: any) => void;
   fin?: any;
+  isHidden?: boolean;
+  handleToggleHideMember?: (member: any) => void;
 }
 
 export default function TeamTableRow({
@@ -21,7 +23,19 @@ export default function TeamTableRow({
   handleDeleteMember,
   handleOpenVendorDeliverables,
   fin,
+  isHidden = false,
+  handleToggleHideMember,
 }: TeamTableRowProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [menuOpen]);
   // For each member, aggregate actual active assignments:
   const memberAssignments = (member.assignments && member.assignments.length > 0)
     ? member.assignments
@@ -270,17 +284,44 @@ export default function TeamTableRow({
         >
           <Pencil className="w-4 h-4"/>
         </button>
-        <button
-          type="button"
-          title="Delete Member"
-          onClick={(e) => {
-            e.stopPropagation();
-            handleDeleteMember(member.id);
-          }}
-          className="h-8 w-8 flex items-center justify-center rounded-lg border border-red-100 bg-red-50/50 hover:bg-red-50 text-red-500 hover:text-red-700 transition-colors cursor-pointer shrink-0"
-        >
-          <Trash2 className="w-4 h-4"/>
-        </button>
+        <div className="relative" ref={menuRef} onClick={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            title="More Options"
+            onClick={() => setMenuOpen(o => !o)}
+            className="h-8 w-8 flex items-center justify-center rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 hover:text-slate-900 transition-colors cursor-pointer shrink-0"
+          >
+            <MoreVertical className="w-4 h-4" />
+          </button>
+          {menuOpen && (
+            <div className="absolute right-0 mt-1.5 w-40 bg-white border border-slate-200 rounded-xl shadow-lg py-1 z-50">
+              {handleToggleHideMember && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    handleToggleHideMember(member);
+                  }}
+                  className="w-full px-3 py-2 text-left text-xs font-bold text-slate-700 hover:bg-amber-50 hover:text-amber-800 flex items-center gap-2 cursor-pointer"
+                >
+                  {isHidden ? <Eye className="w-3.5 h-3.5 text-emerald-600" /> : <EyeOff className="w-3.5 h-3.5 text-amber-600" />}
+                  <span>{isHidden ? 'Unhide Member' : 'Hide Member'}</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setMenuOpen(false);
+                  handleDeleteMember(member.id);
+                }}
+                className="w-full px-3 py-2 text-left text-xs font-bold text-rose-600 hover:bg-rose-50 flex items-center gap-2 cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete Member</span>
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

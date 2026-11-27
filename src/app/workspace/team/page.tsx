@@ -10,7 +10,7 @@ import {
   ExternalLink, Sparkles, AlertCircle, Building2, Briefcase,
   Target, FileText, IndianRupee, Layers, Check, Activity,
   Clock, Calendar, UserCheck, ShieldAlert,
-  Eye, Pencil, Users, DollarSign, Bell
+  Eye, EyeOff, Lock, Unlock, X, Pencil, Users, DollarSign, Bell
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
@@ -82,6 +82,10 @@ interface ActivityLog {
 // Module-level in-memory cache for instant 0ms millisecond transitions
 let memCachedTeamMembers: TeamMember[] = [];
 let memCachedLogs: ActivityLog[] = [];
+let memCachedFinSummary: Record<string, TeamFinancialSummary> = {};
+let memCachedFinRecords: WorkspaceAggregateFinancialRecord[] = [];
+let memCachedHiddenIds: string[] = [];
+let memCachedHasPin = false;
 
 export default function WorkspaceTeamPage() {
   const router = useRouter();
@@ -126,12 +130,21 @@ export default function WorkspaceTeamPage() {
   const [selectedFinanceMember, setSelectedFinanceMember] = useState<TeamMember | null>(null);
   const [isFinanceDrawerOpen, setIsFinanceDrawerOpen] = useState(false);
   const [financeInitialTab, setFinanceInitialTab] = useState<'bookings' | 'payroll' | 'analytics' | 'deliverables' | 'album_printing'>('payroll');
-  const [memberFinancials, setMemberFinancials] = useState<Record<string, TeamFinancialSummary>>({});
-  const [financePeriod, setFinancePeriod] = useState<'all' | 'this_month' | 'last_month' | 'this_year' | 'custom'>('all');
+  const [memberFinancials, setMemberFinancials] = useState<Record<string, TeamFinancialSummary>>(() => memCachedFinSummary);
+  const [financePeriod, setFinancePeriod] = useState<'all' | 'today' | 'yesterday' | 'this_month' | 'last_month' | 'this_year' | 'custom'>('all');
+  const [financeViewMode, setFinanceViewMode] = useState<'all' | 'paid_only'>('all');
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
-  const [aggregateRecords, setAggregateRecords] = useState<WorkspaceAggregateFinancialRecord[]>([]);
-  const [financialsLoading, setFinancialsLoading] = useState(true);
+  const [aggregateRecords, setAggregateRecords] = useState<WorkspaceAggregateFinancialRecord[]>(() => memCachedFinRecords);
+  const [financialsLoading, setFinancialsLoading] = useState<boolean>(() => Object.keys(memCachedFinSummary).length === 0);
+  const [hiddenMemberIds, setHiddenMemberIds] = useState<string[]>(() => memCachedHiddenIds);
+  const [hasHidePin, setHasHidePin] = useState<boolean>(() => memCachedHasPin);
+  const [hiddenUnlocked, setHiddenUnlocked] = useState<boolean>(false);
+  const [showPinModal, setShowPinModal] = useState<boolean>(false);
+  const [pinInput, setPinInput] = useState<string>('');
+  const [pinError, setPinError] = useState<string>('');
+  const [pinVerifying, setPinVerifying] = useState<boolean>(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [memberToDelete, setMemberToDelete] = useState<TeamMember | null>(null);
 
@@ -159,16 +172,27 @@ export default function WorkspaceTeamPage() {
       } catch (_) {}
     }
 
-    // Instant 0ms hydration for financial overview
+    // Instant 0ms hydration for financial overview & hidden list
     try {
       const storedFin = localStorage.getItem('sc_cached_team_financials');
       if (storedFin) {
         const parsedFin = JSON.parse(storedFin);
         if (parsedFin.summaryMap && Object.keys(parsedFin.summaryMap).length > 0) {
+          memCachedFinSummary = parsedFin.summaryMap;
           setMemberFinancials(parsedFin.summaryMap);
+          setFinancialsLoading(false);
         }
         if (Array.isArray(parsedFin.records) && parsedFin.records.length > 0) {
+          memCachedFinRecords = parsedFin.records;
           setAggregateRecords(parsedFin.records);
+        }
+        if (Array.isArray(parsedFin.hiddenMemberIds)) {
+          memCachedHiddenIds = parsedFin.hiddenMemberIds;
+          setHiddenMemberIds(parsedFin.hiddenMemberIds);
+        }
+        if (typeof parsedFin.hasPin === 'boolean') {
+          memCachedHasPin = parsedFin.hasPin;
+          setHasHidePin(parsedFin.hasPin);
         }
       }
     } catch (_) {}
@@ -196,240 +220,61 @@ export default function WorkspaceTeamPage() {
   }, [mounted, fetchPendingReminders]);
 
 
-  // Instant O(1) Batch Financial Summaries for all members in 1 single pass
-  const loadFinancialSummaries = useCallback(async (membersList: TeamMember[]) => {
-    const { data: { session } } = await supabase.auth.getSession();
-    const currentUid = session?.user?.id;
-    const effectiveWsId = workspaceId || currentUid || userEmail;
-    if (!effectiveWsId || membersList.length === 0) {
-      setFinancialsLoading(false);
-      return;
-    }
-
-    try {
-      setFinancialsLoading(true);
-      const memberIds = membersList.map(m => m.id).filter(Boolean);
-      const { summaryMap, records } = await fetchWorkspaceAllTeamAggregateFinancials(effectiveWsId, memberIds, membersList);
-      setMemberFinancials(summaryMap);
-      setAggregateRecords(records);
-      try {
-        localStorage.setItem('sc_cached_team_financials', JSON.stringify({ summaryMap, records }));
-      } catch (_) {}
-    } catch (err) {
-      console.error('[WorkspaceTeamPage] Batch financials error:', err);
-    } finally {
-      setFinancialsLoading(false);
-    }
-  }, [workspaceId, userEmail]);
-
-  // Load team members from database
-  const loadMembers = useCallback(async () => {
-    setLoading(true);
+  // Single-Pass 0ms SWR Fetcher for Team Directory + Crew Payment Overview + Hide/PIN Status
+  const loadMembers = useCallback(async (forceFresh = false) => {
+    if (memCachedTeamMembers.length === 0) setLoading(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const currentUid = session?.user?.id;
-      if (!currentUid) return;
-
       const effectiveWsId = workspaceId || currentUid;
+      if (!effectiveWsId) return;
 
-      // 1. Fetch isolated workspace member rates
-      const wsRatesMap = await fetchWorkspaceMemberRatesMap(effectiveWsId);
+      const overview = await authFetchJson(
+        `/api/workspace/team/overview?workspace_id=${encodeURIComponent(effectiveWsId)}${forceFresh ? '&fresh=1' : ''}`
+      );
+      if (overview?.success && Array.isArray(overview.members)) {
+        const nextMembers: TeamMember[] = overview.members;
+        const nextSummary = overview.summaryMap || {};
+        const nextRecords = Array.isArray(overview.records) ? overview.records : [];
+        const nextHidden = Array.isArray(overview.hiddenMemberIds) ? overview.hiddenMemberIds : [];
+        const nextHasPin = Boolean(overview.hasPin);
 
-      // 2. Fetch from workspace_members API / DB
-      let combinedMembers: TeamMember[] = [];
+        memCachedTeamMembers = nextMembers;
+        memCachedFinSummary = nextSummary;
+        memCachedFinRecords = nextRecords;
+        memCachedHiddenIds = nextHidden;
+        memCachedHasPin = nextHasPin;
 
-      try {
-        const res = await fetch(`/api/workspace/members?workspace_id=${effectiveWsId}`, {
-          headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
-        });
-        const json = await res.json();
-        if (json.success && Array.isArray(json.members) && json.members.length > 0) {
-          combinedMembers = json.members.map((m: any) => ({
-            id: m.id,
-            name: m.name || 'Team Member',
-            email: m.email || '',
-            phone: m.phone || '',
-            primary_role: m.primary_role || 'FREELANCER',
-            roles: m.roles || [m.primary_role || 'FREELANCER'],
-            member_types: m.member_types || [m.primary_type || 'IN_HOUSE'],
-            primary_type: m.primary_type || 'IN_HOUSE',
-            avatar_url: m.avatar_url || '',
-            status: m.status || 'ACTIVE',
-            default_daily_rate: typeof wsRatesMap[m.id] === 'object' ? wsRatesMap[m.id].rate : (wsRatesMap[m.id] != null ? wsRatesMap[m.id] : (m.default_daily_rate || 0)),
-            payout_frequency: typeof wsRatesMap[m.id] === 'object' && wsRatesMap[m.id].frequency ? wsRatesMap[m.id].frequency : (m.payout_frequency || 'daily'),
-            default_currency: m.default_currency || 'INR',
-            permissions: m.studio_member_permissions || m.permissions || m.member_permissions?.[0] || m.member_permissions || undefined,
-          }));
-        }
-      } catch (_) {}
+        setMembers(nextMembers);
+        setMemberFinancials(nextSummary);
+        setAggregateRecords(nextRecords);
+        setHiddenMemberIds(nextHidden);
+        setHasHidePin(nextHasPin);
+        setFinancialsLoading(false);
 
-      // 3. Also merge from fw_team_members for backwards compatibility
-      const { data: fwData } = await supabase
-        .from('fw_team_members')
-        .select('*')
-        .eq('user_id', currentUid);
-
-      if (fwData && fwData.length > 0) {
-        for (const f of fwData) {
-          const matched = combinedMembers.find(
-            c => c.id === f.id || 
-                 (f.email && c.email && c.email.trim().toLowerCase() === f.email.trim().toLowerCase()) ||
-                 (f.name && c.name && c.name.trim().toLowerCase() === f.name.trim().toLowerCase())
-          );
-          const fRate = typeof wsRatesMap[f.id] === 'object' ? wsRatesMap[f.id].rate : (wsRatesMap[f.id] != null ? wsRatesMap[f.id] : (f.default_daily_rate || 0));
-          const fFreq = typeof wsRatesMap[f.id] === 'object' && wsRatesMap[f.id].frequency ? wsRatesMap[f.id].frequency : (f.payout_frequency || 'daily');
-
-          if (matched) {
-            if ((!matched.default_daily_rate || matched.default_daily_rate === 0) && fRate > 0) {
-              matched.default_daily_rate = fRate;
-            }
-            if (fFreq === 'monthly') {
-              matched.payout_frequency = 'monthly';
-            }
-            if (!matched.phone && f.phone_number) {
-              matched.phone = `${f.country_code || '+91'} ${f.phone_number}`;
-            }
-          } else {
-            combinedMembers.push({
-              id: f.id,
-              name: f.name,
-              email: f.email || '',
-              phone: f.phone_number ? `${f.country_code || '+91'} ${f.phone_number}` : '',
-              primary_role: f.primary_role || 'Crew',
-              roles: [f.primary_role || 'Crew'],
-              member_types: f.member_types || ['IN_HOUSE'],
-              primary_type: f.primary_type || 'IN_HOUSE',
-              avatar_url: f.avatar_url || '',
-              status: 'ACTIVE',
-              default_daily_rate: fRate,
-              payout_frequency: fFreq,
-              default_currency: f.default_currency || 'INR',
-            });
-          }
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem('sc_cached_team_members', JSON.stringify(nextMembers));
+            localStorage.setItem('sc_cached_team_financials', JSON.stringify({
+              summaryMap: nextSummary,
+              records: nextRecords,
+              hiddenMemberIds: nextHidden,
+              hasPin: nextHasPin,
+            }));
+          } catch (_) {}
         }
       }
-
-      // 3.5 Ensure exact permissions from studio_member_permissions table
-      const allMemberIds = combinedMembers.map(m => m.id).filter(Boolean);
-      if (allMemberIds.length > 0) {
-        try {
-          const { data: smpData } = await supabase
-            .from('studio_member_permissions')
-            .select('*')
-            .eq('owner_id', currentUid)
-            .in('member_id', allMemberIds);
-
-          if (smpData && smpData.length > 0) {
-            const smpMap = new Map(smpData.map(p => [p.member_id, p]));
-            combinedMembers = combinedMembers.map(m => {
-              const sp = smpMap.get(m.id);
-              if (sp) {
-                return {
-                  ...m,
-                  permissions: sp,
-                  studio_member_permissions: sp,
-                };
-              }
-              return m;
-            });
-          }
-        } catch (_) {}
-      }
-
-      // 4. Fetch aggregated assignments & payouts to hydrate live commercials
-      if (allMemberIds.length > 0) {
-        try {
-          const [assignRes, payoutRes] = await Promise.allSettled([
-            supabase
-              .from('fw_assignments')
-              .select('id, assigned_member_id, assigned_member_name, agreed_amount, advance_amount, paid_amount, balance_amount, payment_status, workspace_id, user_id, project:fw_projects(id, user_id)')
-              .in('assigned_member_id', allMemberIds),
-            supabase
-              .from('team_event_payouts')
-              .select('id, member_id, member_name, agreed_amount, paid_amount, balance_amount, status, workspace_id, user_id')
-              .in('member_id', allMemberIds)
-          ]);
-
-          const rawAssigns = assignRes.status === 'fulfilled' && assignRes.value.data ? assignRes.value.data : [];
-          const assigns = rawAssigns;
-          const payouts = payoutRes.status === 'fulfilled' && payoutRes.value.data ? payoutRes.value.data : [];
-
-          const nameToMemberIdMap = new Map<string, string>();
-          combinedMembers.forEach(m => {
-            if (m.name) nameToMemberIdMap.set(m.name.trim().toLowerCase(), m.id);
-          });
-
-          const assignsByMember: Record<string, any[]> = {};
-          assigns.forEach((a: any) => {
-            let mid = a.assigned_member_id;
-            if ((!mid || !assignsByMember[mid]) && a.assigned_member_name) {
-              const matchedId = nameToMemberIdMap.get(a.assigned_member_name.trim().toLowerCase());
-              if (matchedId) mid = matchedId;
-            }
-            if (!assignsByMember[mid]) assignsByMember[mid] = [];
-            assignsByMember[mid].push(a);
-          });
-
-          const payoutsByMember: Record<string, any[]> = {};
-          payouts.forEach((p: any) => {
-            let mid = p.member_id;
-            if ((!mid || !payoutsByMember[mid]) && p.member_name) {
-              const matchedId = nameToMemberIdMap.get(p.member_name.trim().toLowerCase());
-              if (matchedId) mid = matchedId;
-            }
-            if (!payoutsByMember[mid]) payoutsByMember[mid] = [];
-            payoutsByMember[mid].push(p);
-          });
-
-          combinedMembers = combinedMembers.map(m => {
-            const mAssigns = assignsByMember[m.id] || [];
-            const mPayouts = payoutsByMember[m.id] || [];
-            const memberAssignments = mAssigns.length > 0 ? mAssigns : mPayouts;
-
-            const isInHouse = m.primary_type === 'IN_HOUSE' || m.member_types?.includes('IN_HOUSE') || m.payout_frequency === 'monthly';
-
-            // Sum ONLY explicit event agreed amounts for per-shoot commercials:
-            // For in-house staff, base monthly salary should never be counted as a per-shoot payout!
-            const perShootAgreedTotal = (memberAssignments || []).reduce((sum: number, item: any) => {
-              const rawAmt = Number(item.agreed_amount) || 0;
-              const isDefaultSalary = isInHouse && (rawAmt === Number(m.default_daily_rate) || rawAmt === Number(m.monthly_salary)) && (Number(item.paid_amount ?? item.advance_amount) || 0) === 0;
-              return sum + (isDefaultSalary ? 0 : rawAmt);
-            }, 0);
-
-            const perShootPaidTotal = (memberAssignments || []).reduce((sum: number, item: any) => {
-              return sum + (Number(item.paid_amount ?? item.advance_amount) || 0);
-            }, 0);
-
-            const perShootBalanceTotal = Math.max(0, perShootAgreedTotal - perShootPaidTotal);
-
-            return {
-              ...m,
-              assignments: mAssigns,
-              payouts: mPayouts,
-              commercial_agreed: perShootAgreedTotal,
-              commercial_paid: perShootPaidTotal,
-              commercial_balance: perShootBalanceTotal
-            };
-          });
-        } catch (commErr) {
-          console.warn('[WorkspaceTeamPage] Commercials hydration note:', commErr);
-        }
-      }
-
-      setMembers(combinedMembers);
-      memCachedTeamMembers = combinedMembers;
-      if (typeof window !== 'undefined') {
-        try {
-          localStorage.setItem('sc_cached_team_members', JSON.stringify(combinedMembers));
-        } catch (_) {}
-      }
-      loadFinancialSummaries(combinedMembers);
     } catch (err) {
-      console.error('[WorkspaceTeamPage] Load members error:', err);
+      console.error('[WorkspaceTeamPage] Load overview error:', err);
     } finally {
       setLoading(false);
+      setFinancialsLoading(false);
     }
   }, [workspaceId]);
+
+  const loadFinancialSummaries = useCallback(async () => {
+    await loadMembers(true);
+  }, [loadMembers]);
 
   // Load Activity Logs
   const loadActivityLogs = useCallback(async () => {
@@ -782,6 +627,82 @@ export default function WorkspaceTeamPage() {
     }
   };
 
+  const handleToggleHideMember = async (member: TeamMember) => {
+    const currentlyHidden = hiddenMemberIds.includes(member.id);
+    const nextHidden = currentlyHidden
+      ? hiddenMemberIds.filter(id => id !== member.id)
+      : [...hiddenMemberIds, member.id];
+    setHiddenMemberIds(nextHidden);
+    memCachedHiddenIds = nextHidden;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const effectiveWsId = workspaceId || session?.user?.id;
+      await authFetchJson('/api/workspace/team/pin', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'toggle_hide_member',
+          workspace_id: effectiveWsId,
+          memberId: member.id,
+          hide: !currentlyHidden,
+        }),
+      });
+    } catch (err) {
+      console.error('[HideMember] Error:', err);
+      setHiddenMemberIds(hiddenMemberIds);
+      memCachedHiddenIds = hiddenMemberIds;
+    }
+  };
+
+  const handleSelectFilterTab = (tabId: string) => {
+    if (tabId === 'Hidden') {
+      if (hasHidePin && !hiddenUnlocked) {
+        setPinInput('');
+        setPinError('');
+        setShowPinModal(true);
+        return;
+      }
+      setSelectedFilter('Hidden');
+      setVisibleCount(15);
+      return;
+    }
+    setSelectedFilter(tabId);
+    setVisibleCount(15);
+  };
+
+  const handleVerifyPinSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pinInput || pinInput.length < 4) {
+      setPinError('Please enter your 4-6 digit PIN.');
+      return;
+    }
+    setPinVerifying(true);
+    setPinError('');
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const effectiveWsId = workspaceId || session?.user?.id;
+      const res = await authFetchJson('/api/workspace/team/pin', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'verify_pin',
+          workspace_id: effectiveWsId,
+          pin: pinInput,
+        }),
+      });
+      if (res?.valid) {
+        setHiddenUnlocked(true);
+        setShowPinModal(false);
+        setSelectedFilter('Hidden');
+        setVisibleCount(15);
+      } else {
+        setPinError(res?.error || 'Incorrect PIN.');
+      }
+    } catch (err: any) {
+      setPinError(err?.message || 'Incorrect PIN. Please try again.');
+    } finally {
+      setPinVerifying(false);
+    }
+  };
+
   // 2. Populate "All Roles" Dropdown Dynamically
   const availableRoles = useMemo(() => {
     const roleSet = new Set<string>();
@@ -797,32 +718,49 @@ export default function WorkspaceTeamPage() {
     return Array.from(roleSet).sort();
   }, [members]);
 
-  // Period Specific Stats per Member (when date filter is active)
-  const periodMemberStats = useMemo(() => {
-    if (financePeriod === 'all' || aggregateRecords.length === 0) return null;
+  const matchesSelectedPeriod = useCallback((dateStr: string) => {
+    if (financePeriod === 'all') return true;
+    if (!dateStr) return false;
+    const d = dateStr.split('T')[0];
     const now = new Date();
-    const currentYearMonth = now.toISOString().substring(0, 7);
+    const todayIso = now.toISOString().split('T')[0];
+    const yest = new Date(now);
+    yest.setDate(now.getDate() - 1);
+    const yestIso = yest.toISOString().split('T')[0];
+    const currentYearMonth = todayIso.substring(0, 7);
     const currentYear = String(now.getFullYear());
     const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const prevYearMonth = prevMonthDate.toISOString().substring(0, 7);
 
+    if (financePeriod === 'today') return d === todayIso;
+    if (financePeriod === 'yesterday') return d === yestIso;
+    if (financePeriod === 'this_month') return d.startsWith(currentYearMonth);
+    if (financePeriod === 'last_month') return d.startsWith(prevYearMonth);
+    if (financePeriod === 'this_year') return d.startsWith(currentYear);
+    if (financePeriod === 'custom') {
+      if (customStartDate && d < customStartDate) return false;
+      if (customEndDate && d > customEndDate) return false;
+      return true;
+    }
+    return true;
+  }, [financePeriod, customStartDate, customEndDate]);
+
+  const periodMemberStats = useMemo(() => {
+    if ((financePeriod === 'all' && financeViewMode === 'all') || aggregateRecords.length === 0) return null;
     const statsMap: Record<string, { total_agreed: number; total_paid: number; total_balance: number; count: number }> = {};
 
-    aggregateRecords.forEach((rec) => {
-      const recDate = rec.date || '';
-      let matches = false;
-      if (financePeriod === 'this_month') matches = recDate.startsWith(currentYearMonth);
-      else if (financePeriod === 'last_month') matches = recDate.startsWith(prevYearMonth);
-      else if (financePeriod === 'this_year') matches = recDate.startsWith(currentYear);
-      else if (financePeriod === 'custom') {
-        matches = (!customStartDate || recDate >= customStartDate) && (!customEndDate || recDate <= customEndDate);
-      }
+    aggregateRecords.forEach((rec: any) => {
+      const targetDate = financeViewMode === 'paid_only'
+        ? (rec.payment_date || rec.date || '')
+        : (rec.date || '');
+      const matches = matchesSelectedPeriod(targetDate);
       if (matches && rec.member_id) {
+        const agreed = Number(rec.agreed_amount) || 0;
+        const paid = Number(rec.paid_amount) || 0;
+        if (financeViewMode === 'paid_only' && paid <= 0) return;
         if (!statsMap[rec.member_id]) {
           statsMap[rec.member_id] = { total_agreed: 0, total_paid: 0, total_balance: 0, count: 0 };
         }
-        const agreed = Number(rec.agreed_amount) || 0;
-        const paid = Number(rec.paid_amount) || 0;
         statsMap[rec.member_id].total_agreed += agreed;
         statsMap[rec.member_id].total_paid += paid;
         statsMap[rec.member_id].total_balance += Math.max(0, agreed - paid);
@@ -831,19 +769,49 @@ export default function WorkspaceTeamPage() {
     });
 
     return statsMap;
-  }, [aggregateRecords, financePeriod, customStartDate, customEndDate]);
+  }, [aggregateRecords, financePeriod, financeViewMode, matchesSelectedPeriod]);
+
+  const paidPaymentsBreakdown = useMemo(() => {
+    const hiddenSet = new Set(hiddenMemberIds);
+    const items: Array<{ id: string; member_id: string; member_name: string; title: string; date: string; amount: number }> = [];
+    for (const rec of aggregateRecords as any[]) {
+      if (hiddenSet.has(rec.member_id) && !(selectedFilter === 'Hidden' && hiddenUnlocked)) continue;
+      const paidAmt = Number(rec.paid_amount) || 0;
+      if (paidAmt <= 0) continue;
+      const pDate = String(rec.payment_date || rec.date || '').split('T')[0];
+      if (!matchesSelectedPeriod(pDate)) continue;
+      items.push({
+        id: String(rec.id),
+        member_id: rec.member_id,
+        member_name: rec.member_name || 'Crew Member',
+        title: rec.title || 'Payment',
+        date: pDate,
+        amount: paidAmt,
+      });
+    }
+    items.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    return items;
+  }, [aggregateRecords, hiddenMemberIds, selectedFilter, hiddenUnlocked, matchesSelectedPeriod]);
 
   // 1. Robust Universal Search (Name, Role, Phone, Email) & Multi-Criteria Filtering
   const filteredMembers = useMemo(() => {
+    const hiddenSet = new Set(hiddenMemberIds);
     return members.filter((member) => {
-      // 1. Tab Classification Filter (All Crew, In-House, Freelancers, Partners)
+      const isMemberHidden = hiddenSet.has(member.id);
+      if (selectedFilter === 'Hidden') {
+        if (!isMemberHidden) return false;
+      } else {
+        if (isMemberHidden) return false;
+      }
+
+      // 1. Tab Classification Filter (All Crew, In-House, Freelancers, Partners, Hidden)
       const tabKey = (selectedFilter || '').toLowerCase().replace(/[-_\s]/g, '');
       const memType = String(member.type || member.primary_type || '').toLowerCase().replace(/[-_\s]/g, '');
       const memTypes = Array.isArray(member.member_types)
         ? member.member_types.map((t: string) => String(t).toLowerCase().replace(/[-_\s]/g, ''))
         : [];
 
-      const isAll = !tabKey || tabKey === 'all' || tabKey === 'allcrew';
+      const isAll = !tabKey || tabKey === 'all' || tabKey === 'allcrew' || tabKey === 'hidden';
       if (!isAll) {
         const isInHouse = memType === 'inhouse' || memTypes.includes('inhouse');
         const isFreelancer = memType === 'freelancer' || memTypes.includes('freelancer');
@@ -916,7 +884,7 @@ export default function WorkspaceTeamPage() {
 
       return true;
     });
-  }, [members, selectedFilter, selectedRole, searchQuery, periodMemberStats]);
+  }, [members, hiddenMemberIds, selectedFilter, selectedRole, searchQuery, periodMemberStats]);
 
   // Incremental Batch Scroll (15 Members at a Time)
   const [visibleCount, setVisibleCount] = useState(15);
@@ -930,7 +898,7 @@ export default function WorkspaceTeamPage() {
   const allTeamFinancialTotals = useMemo(() => {
     // Instant 0ms Fast-Path: When viewing 'all' or before aggregateRecords load from network
     // Computes directly from memberFinancials in memory without waiting or requiring scrolling!
-    if (financePeriod === 'all' || aggregateRecords.length === 0) {
+    if ((financePeriod === 'all' && financeViewMode === 'all') || aggregateRecords.length === 0) {
       let totalAgreed = 0;
       let totalPaid = 0;
       let totalBalance = 0;
@@ -977,26 +945,11 @@ export default function WorkspaceTeamPage() {
     // Cross-reference with filtered members in active directory tab
     const activeMemberIds = new Set(filteredMembers.map(m => m.id));
 
-    const filtered = aggregateRecords.filter((rec) => {
-      if (activeMemberIds.size > 0 && !activeMemberIds.has(rec.member_id)) {
-        return false;
-      }
-
-      const recDate = rec.date || '';
-      if (financePeriod === 'this_month') {
-        return recDate.startsWith(currentYearMonth);
-      }
-      if (financePeriod === 'last_month') {
-        return recDate.startsWith(prevYearMonth);
-      }
-      if (financePeriod === 'this_year') {
-        return recDate.startsWith(currentYear);
-      }
-      if (financePeriod === 'custom') {
-        if (customStartDate && recDate < customStartDate) return false;
-        if (customEndDate && recDate > customEndDate) return false;
-        return true;
-      }
+    const filtered = aggregateRecords.filter((rec: any) => {
+      if (!activeMemberIds.has(rec.member_id)) return false;
+      const targetDate = financeViewMode === 'paid_only' ? (rec.payment_date || rec.date || '') : (rec.date || '');
+      if (!matchesSelectedPeriod(targetDate)) return false;
+      if (financeViewMode === 'paid_only' && (Number(rec.paid_amount) || 0) <= 0) return false;
       return true;
     });
 
@@ -1017,13 +970,15 @@ export default function WorkspaceTeamPage() {
       pendingCount,
       percent,
     };
-  }, [aggregateRecords, filteredMembers, memberFinancials, financePeriod, customStartDate, customEndDate]);
+  }, [aggregateRecords, filteredMembers, memberFinancials, financePeriod, financeViewMode, matchesSelectedPeriod]);
 
-  // Metrics
-  const totalCount = members.length;
-  const inHouseCount = members.filter(m => m.member_types?.includes('IN_HOUSE') || m.primary_type === 'IN_HOUSE').length;
-  const freelancerCount = members.filter(m => m.member_types?.includes('FREELANCER') || m.primary_type === 'FREELANCER').length;
-  const partnerCount = members.filter(m => m.member_types?.includes('PARTNER') || m.primary_type === 'PARTNER').length;
+  // Metrics (exclude hidden members from normal tabs)
+  const visibleMembersList = members.filter(m => !hiddenMemberIds.includes(m.id));
+  const hiddenCount = members.filter(m => hiddenMemberIds.includes(m.id)).length;
+  const totalCount = visibleMembersList.length;
+  const inHouseCount = visibleMembersList.filter(m => m.member_types?.includes('IN_HOUSE') || m.primary_type === 'IN_HOUSE').length;
+  const freelancerCount = visibleMembersList.filter(m => m.member_types?.includes('FREELANCER') || m.primary_type === 'FREELANCER').length;
+  const partnerCount = visibleMembersList.filter(m => m.member_types?.includes('PARTNER') || m.primary_type === 'PARTNER').length;
 
   // Format Permissions for visual pills
   const formatLeadsBadge = (p?: string) => {
@@ -1158,30 +1113,105 @@ export default function WorkspaceTeamPage() {
                 </div>
               </div>
 
-              {/* Date / Time Period Filters */}
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <div className="flex items-center p-1 bg-zinc-100/90 rounded-xl text-xs font-bold">
-                  {[
-                    { id: 'all', label: 'All Time' },
-                    { id: 'this_month', label: 'This Month' },
-                    { id: 'last_month', label: 'Last Month' },
-                    { id: 'this_year', label: 'This Year' },
-                    { id: 'custom', label: 'Custom Date' },
-                  ].map((period) => (
-                    <button
-                      key={period.id}
-                      type="button"
-                      onClick={() => setFinancePeriod(period.id as any)}
-                      className={`px-2.5 sm:px-3 py-1 rounded-lg transition-all cursor-pointer text-[11px] font-bold ${
-                        financePeriod === period.id
-                          ? 'bg-zinc-900 text-white shadow-xs'
-                          : 'text-zinc-600 hover:text-zinc-900'
-                      }`}
-                    >
-                      {period.label}
-                    </button>
-                  ))}
-                </div>
+              {/* Compact Filter Icon Button + Dropdown Popover */}
+              <div className="relative flex items-center gap-2">
+                {(financePeriod !== 'all' || financeViewMode !== 'all') && (
+                  <span className="px-2.5 py-1 rounded-lg bg-amber-100 text-amber-900 border border-amber-200 text-[11px] font-bold">
+                    {financeViewMode === 'paid_only' ? 'Paid: ' : ''}
+                    {financePeriod === 'today' ? 'Today' : financePeriod === 'yesterday' ? 'Yesterday' : financePeriod === 'this_month' ? 'This Month' : financePeriod === 'last_month' ? 'Last Month' : financePeriod === 'this_year' ? 'This Year' : financePeriod === 'custom' ? 'Custom Range' : 'All Time'}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setIsFilterOpen(o => !o)}
+                  title="Filter Crew Payments & Paid History"
+                  className={`h-9 px-3 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
+                    isFilterOpen || financePeriod !== 'all' || financeViewMode !== 'all'
+                      ? 'bg-zinc-900 text-white border-zinc-900 shadow-xs'
+                      : 'bg-white text-zinc-700 border-zinc-200 hover:bg-zinc-50'
+                  }`}
+                >
+                  <Filter className="w-3.5 h-3.5" />
+                  <span>Filter</span>
+                </button>
+
+                {isFilterOpen && (
+                  <div className="absolute right-0 top-11 w-72 sm:w-80 bg-white border border-zinc-200 rounded-2xl shadow-xl p-4 z-50 space-y-3.5">
+                    <div className="flex items-center justify-between border-b border-zinc-100 pb-2">
+                      <span className="text-xs font-black text-zinc-900 uppercase tracking-wider">Payment Filter</span>
+                      <button type="button" onClick={() => setIsFilterOpen(false)} className="text-zinc-400 hover:text-zinc-700 cursor-pointer">
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase tracking-wider text-zinc-400">View Type</label>
+                      <div className="grid grid-cols-2 gap-1.5 bg-zinc-100 p-1 rounded-xl">
+                        <button
+                          type="button"
+                          onClick={() => setFinanceViewMode('all')}
+                          className={`py-1.5 rounded-lg text-[11px] font-bold transition cursor-pointer ${financeViewMode === 'all' ? 'bg-white text-zinc-900 shadow-2xs' : 'text-zinc-600'}`}
+                        >
+                          All Commitments
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFinanceViewMode('paid_only')}
+                          className={`py-1.5 rounded-lg text-[11px] font-bold transition cursor-pointer ${financeViewMode === 'paid_only' ? 'bg-emerald-600 text-white shadow-2xs' : 'text-zinc-600'}`}
+                        >
+                          Paid Payments
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Date Range</label>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {[
+                          { id: 'all', label: 'All Time' },
+                          { id: 'today', label: 'Today' },
+                          { id: 'yesterday', label: 'Yesterday' },
+                          { id: 'this_month', label: 'This Month' },
+                          { id: 'last_month', label: 'Last Month' },
+                          { id: 'this_year', label: 'This Year' },
+                          { id: 'custom', label: 'Custom Date' },
+                        ].map((period) => (
+                          <button
+                            key={period.id}
+                            type="button"
+                            onClick={() => {
+                              setFinancePeriod(period.id as any);
+                              if (period.id !== 'custom') setIsFilterOpen(false);
+                            }}
+                            className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold text-left transition cursor-pointer border ${
+                              financePeriod === period.id
+                                ? 'bg-zinc-900 text-white border-zinc-900'
+                                : 'bg-zinc-50 text-zinc-700 border-zinc-200/70 hover:bg-zinc-100'
+                            }`}
+                          >
+                            {period.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {(financePeriod !== 'all' || financeViewMode !== 'all') && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFinancePeriod('all');
+                          setFinanceViewMode('all');
+                          setCustomStartDate('');
+                          setCustomEndDate('');
+                          setIsFilterOpen(false);
+                        }}
+                        className="w-full py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-[11px] font-bold cursor-pointer"
+                      >
+                        Reset Filters
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1277,6 +1307,42 @@ export default function WorkspaceTeamPage() {
                 </div>
               </div>
             )}
+            {(financeViewMode === 'paid_only' || financePeriod === 'today' || financePeriod === 'yesterday' || (financePeriod === 'custom' && (customStartDate || customEndDate))) && (
+              <div className="mt-3 p-3.5 rounded-2xl bg-emerald-50/60 border border-emerald-200/80 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    <span className="text-xs font-black text-emerald-950">
+                      Paid Payments Breakdown ({paidPaymentsBreakdown.length} payouts • ₹{paidPaymentsBreakdown.reduce((s, i) => s + i.amount, 0).toLocaleString('en-IN')})
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { setFinanceViewMode('all'); setFinancePeriod('all'); }}
+                    className="text-[11px] font-bold text-emerald-700 hover:underline cursor-pointer"
+                  >
+                    Show All
+                  </button>
+                </div>
+                {paidPaymentsBreakdown.length === 0 ? (
+                  <p className="text-xs text-emerald-800/70 font-medium">No paid disbursements recorded in this date range.</p>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-56 overflow-y-auto pr-1">
+                    {paidPaymentsBreakdown.map((item) => (
+                      <div key={item.id} className="bg-white rounded-xl p-2.5 border border-emerald-200/70 flex items-center justify-between gap-2 shadow-2xs">
+                        <div className="min-w-0">
+                          <div className="text-xs font-bold text-zinc-900 truncate">{item.member_name}</div>
+                          <div className="text-[10px] text-zinc-500 truncate">{item.title} • {item.date || 'N/A'}</div>
+                        </div>
+                        <span className="text-xs font-black font-mono text-emerald-700 shrink-0">
+                          ₹{item.amount.toLocaleString('en-IN')}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* 2. STATS OVERVIEW CARDS (WITH IN-HOUSE / FREELANCER / PARTNER BREAKDOWN) */}
@@ -1303,18 +1369,16 @@ export default function WorkspaceTeamPage() {
                 { id: 'In-House', label: 'In-House', count: inHouseCount },
                 { id: 'Freelancers', label: 'Freelancers', count: freelancerCount },
                 { id: 'Partners', label: 'Partners', count: partnerCount },
-              ].map((tab) => (
+                { id: 'Hidden', label: 'Hidden', count: hiddenCount, locked: hasHidePin && !hiddenUnlocked },
+              ].map((tab: any) => (
                 <button
                   key={tab.id}
-                  onClick={() => {
-                    setSelectedFilter(tab.id);
-                    setVisibleCount(15);
-                  }}
+                  onClick={() => handleSelectFilterTab(tab.id)}
                   className={`flex-1 sm:flex-initial text-center py-1.5 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                     selectedFilter === tab.id ? 'bg-black text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  {tab.label} <span className="opacity-70 text-[10px]">({tab.count})</span>
+                  {tab.id === 'Hidden' && (tab.locked ? <Lock className="w-3 h-3 inline mr-1" /> : <EyeOff className="w-3 h-3 inline mr-1" />)}{tab.label} <span className="opacity-70 text-[10px]">({tab.count})</span>
                 </button>
               ))}
             </div>
@@ -1394,6 +1458,8 @@ export default function WorkspaceTeamPage() {
                       handleOpenVendorDeliverables={handleOpenVendorDeliverables}
                       handleEditMember={handleEditMember}
                       handleDeleteMember={handleDeleteMember}
+                      isHidden={hiddenMemberIds.includes(member.id)}
+                      handleToggleHideMember={handleToggleHideMember}
                     />
                   );
                 })}
@@ -1407,7 +1473,7 @@ export default function WorkspaceTeamPage() {
                   <div className="col-span-2">Type & Role</div>
                   <div className="col-span-3">Commercials (Agreed / Paid / Due)</div>
                   <div className="col-span-2">Portal Access</div>
-                  <div className="col-span-2 text-right">Actions</div>
+                  <div className="col-span-2 text-right">•••</div>
                 </div>
 
                 {/* Row List */}
@@ -1423,6 +1489,8 @@ export default function WorkspaceTeamPage() {
                       handleOpenVendorDeliverables={handleOpenVendorDeliverables}
                       handleEditMember={handleEditMember}
                       handleDeleteMember={handleDeleteMember}
+                      isHidden={hiddenMemberIds.includes(member.id)}
+                      handleToggleHideMember={handleToggleHideMember}
                     />
                     );
                   })}
@@ -1673,6 +1741,59 @@ export default function WorkspaceTeamPage() {
           }
         }}
       />
+
+      {/* Security PIN Modal for Hidden Team & Partners */}
+      {showPinModal && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
+          <div className="w-full max-w-sm bg-white rounded-3xl border border-zinc-200 p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center">
+                  <Lock className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-zinc-900">Enter Security PIN</h3>
+                  <p className="text-[11px] text-zinc-500">Unlock hidden team members &amp; commercials</p>
+                </div>
+              </div>
+              <button type="button" onClick={() => setShowPinModal(false)} className="text-zinc-400 hover:text-zinc-700 cursor-pointer">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <form onSubmit={handleVerifyPinSubmit} className="space-y-3">
+              <input
+                type="password"
+                maxLength={6}
+                autoFocus
+                value={pinInput}
+                onChange={(e) => setPinInput(e.target.value.replace(/[^0-9]/g, ''))}
+                placeholder="••••••"
+                className="w-full px-4 py-3 bg-zinc-50 border border-zinc-300 rounded-xl text-center text-lg font-black tracking-widest font-mono text-zinc-900 focus:outline-none focus:border-amber-500"
+              />
+              {pinError && <p className="text-xs font-bold text-rose-600 text-center">{pinError}</p>}
+              <div className="flex items-center justify-between pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPinModal(false);
+                    router.push('/workspace/settings?tab=team_partners');
+                  }}
+                  className="text-[11px] font-bold text-amber-700 hover:underline cursor-pointer"
+                >
+                  Forgot PIN? Reset via Email OTP
+                </button>
+                <button
+                  type="submit"
+                  disabled={pinVerifying}
+                  className="px-4 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-bold cursor-pointer disabled:opacity-50"
+                >
+                  {pinVerifying ? 'Verifying...' : 'Unlock'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,10 +1,10 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   Eye, 
   Pencil, 
-  Trash2,
+  Trash2, MoreVertical, EyeOff,
   UserCheck,      // Leads & CRM
   Users,          // Team & Partners
   Users2,         // Clients Directory
@@ -171,14 +171,44 @@ export default function TeamMemberCard({
           >
             <Pencil className="w-3.5 h-3.5"/>
           </button>
-          <button
-            type="button"
-            title="Delete"
-            onClick={() => handleDeleteMember(member.id)}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
-          >
-            <Trash2 className="w-3.5 h-3.5"/>
-          </button>
+                    <div className="relative" ref={menuRef}>
+            <button
+              type="button"
+              title="More Options"
+              onClick={() => setMenuOpen(o => !o)}
+              className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
+            >
+              <MoreVertical className="w-3.5 h-3.5" />
+            </button>
+            {menuOpen && (
+              <div className="absolute right-0 mt-1 w-36 bg-white border border-slate-200 rounded-xl shadow-lg py-1 z-50">
+                {handleToggleHideMember && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      handleToggleHideMember(member);
+                    }}
+                    className="w-full px-3 py-2 text-left text-xs font-bold text-slate-700 hover:bg-amber-50 hover:text-amber-800 flex items-center gap-2 cursor-pointer"
+                  >
+                    {isHidden ? <Eye className="w-3.5 h-3.5 text-emerald-600" /> : <EyeOff className="w-3.5 h-3.5 text-amber-600" />}
+                    <span>{isHidden ? 'Unhide' : 'Hide'}</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    handleDeleteMember(member.id);
+                  }}
+                  className="w-full px-3 py-2 text-left text-xs font-bold text-rose-600 hover:bg-rose-50 flex items-center gap-2 cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete</span>
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

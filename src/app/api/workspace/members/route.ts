@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { verifyMetaAuth } from '@/lib/meta-auth';
+import { invalidateWorkspaceCache } from '@/lib/server-swr-cache';
 import { createClient } from '@supabase/supabase-js';
 
 export const dynamic = 'force-dynamic';
