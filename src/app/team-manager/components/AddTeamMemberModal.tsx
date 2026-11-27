@@ -591,10 +591,43 @@ export default function AddTeamMemberModal({
       // Single Unified Canonical ID across both workspace_members and fw_team_members
       const canonicalMemberId = memberToEdit?.id || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `mem_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`);
       const effectiveEmail = email.trim() || `${name.trim().toLowerCase().replace(/[^a-z0-9]/g, '')}@partner.studiocore.in`;
+      const effectiveWsId = workspaceId || (typeof window !== 'undefined' ? localStorage.getItem('sc_active_workspace_id') || '' : '');
 
-      // 1. Trigger parent onSave for UI state with the exact canonicalMemberId
+      let resolvedMemberId = canonicalMemberId;
+
+      // 1. Authoritatively persist to Multi-Tenant Database API first (throws on auth/DB errors)
+      if (effectiveWsId) {
+        const { authFetchJson } = await import('@/lib/client-auth-fetch');
+        const resData = await authFetchJson('/api/workspace/members', {
+          method: 'POST',
+          body: JSON.stringify({
+            id: canonicalMemberId,
+            member_id: canonicalMemberId,
+            workspace_id: effectiveWsId,
+            name: name.trim(),
+            email: effectiveEmail,
+            phone: `${countryCode} ${cleanEnteredPhone}`.trim(),
+            primary_role: primaryRole,
+            roles: selectedRoles,
+            member_types: selectedMemberTypes,
+            primary_type: selectedMemberTypes[0] || 'IN_HOUSE',
+            avatar_url: avatarUrl || null,
+            default_daily_rate: cleanRate,
+            daily_rate: cleanRate,
+            monthly_salary: payoutFrequency === 'monthly' ? cleanRate : 0,
+            default_currency: 'INR',
+            payout_frequency: payoutFrequency,
+            permissions: permissionsObj,
+          }),
+        });
+        if (resData?.member?.id) {
+          resolvedMemberId = resData.member.id;
+        }
+      }
+
+      // 2. Sync parent UI state with confirmed canonical ID
       await onSave({
-        id: canonicalMemberId,
+        id: resolvedMemberId,
         name: name.trim(),
         primary_role: primaryRole,
         roles: selectedRoles,
@@ -611,48 +644,6 @@ export default function AddTeamMemberModal({
         payout_frequency: payoutFrequency,
         permissions: permissionsObj,
       });
-
-      let resolvedMemberId = canonicalMemberId;
-
-      // 2. Persist to Multi-Tenant Database API using the EXACT SAME canonicalMemberId
-      if (workspaceId) {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.access_token) {
-          const res = await fetch('/api/workspace/members', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${session.access_token}`,
-            },
-            body: JSON.stringify({
-              id: canonicalMemberId,
-              member_id: canonicalMemberId,
-              workspace_id: workspaceId,
-              name: name.trim(),
-              email: effectiveEmail,
-              phone: `${countryCode} ${cleanEnteredPhone}`.trim(),
-              primary_role: primaryRole,
-              roles: selectedRoles,
-              member_types: selectedMemberTypes,
-              primary_type: selectedMemberTypes[0] || 'IN_HOUSE',
-              avatar_url: avatarUrl || null,
-              default_daily_rate: cleanRate,
-              daily_rate: cleanRate,
-              monthly_salary: payoutFrequency === 'monthly' ? cleanRate : 0,
-              default_currency: 'INR',
-              payout_frequency: payoutFrequency,
-              permissions: permissionsObj,
-            }),
-          }).catch(() => null);
-
-          if (res?.ok) {
-            const resData = await res.json().catch(() => null);
-            if (resData?.member?.id) {
-              resolvedMemberId = resData.member.id;
-            }
-          }
-        }
-      }
 
       if (workspaceId && resolvedMemberId) {
         await saveWorkspaceMemberRate(workspaceId, resolvedMemberId, cleanRate, 'INR', payoutFrequency).catch(() => {});

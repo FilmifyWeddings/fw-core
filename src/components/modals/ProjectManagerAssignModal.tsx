@@ -182,13 +182,14 @@ export const ProjectManagerAssignModal: React.FC<ProjectManagerAssignModalProps>
       const pmEmail = matchedMember?.email || null;
       const pmPhone = matchedMember?.phone || null;
 
+      const { authFetchJson } = await import('@/lib/client-auth-fetch');
       const { data: { session } } = await supabase.auth.getSession();
-      const workspaceId = session?.user?.id;
+      const storedWs = typeof window !== 'undefined' ? localStorage.getItem('sc_active_workspace_id') : null;
+      const workspaceId = client.workspace_id || storedWs || session?.user?.id;
 
       // Call robust server endpoint using supabaseAdmin to guarantee persistence across all 4 modules
-      const res = await fetch('/api/workspace/sync-card', {
+      const jsonRes = await authFetchJson('/api/workspace/sync-card', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'assign_pm',
           clientId: client.id,
@@ -203,8 +204,6 @@ export const ProjectManagerAssignModal: React.FC<ProjectManagerAssignModalProps>
           workspaceId
         })
       });
-
-      const jsonRes = await res.json();
       if (!jsonRes.success) {
         throw new Error(jsonRes.error || 'Failed to save Project Manager assignment');
       }

@@ -55,8 +55,13 @@ export async function POST(req: NextRequest) {
         targetClient = data;
       }
       if (!targetClient && leadId) {
-        const { data } = await supabaseAdmin.from('workspace_clients').select('*').eq('lead_id', leadId).maybeSingle();
-        targetClient = data;
+        const { data } = await supabaseAdmin
+          .from('workspace_clients')
+          .select('*')
+          .eq('lead_id', leadId)
+          .order('total_package_amount', { ascending: false })
+          .limit(1);
+        targetClient = data?.[0] || null;
       }
       if (!targetClient && projectId) {
         const { data: p } = await supabaseAdmin.from('fw_projects').select('client_id, client_name').eq('id', projectId).maybeSingle();
@@ -64,8 +69,10 @@ export async function POST(req: NextRequest) {
           const { data } = await supabaseAdmin.from('workspace_clients').select('*').eq('id', p.client_id).maybeSingle();
           targetClient = data;
         } else if (p?.client_name) {
-          const { data } = await supabaseAdmin.from('workspace_clients').select('*').ilike('name', p.client_name.trim()).maybeSingle();
-          targetClient = data;
+          let cq = supabaseAdmin.from('workspace_clients').select('*').ilike('name', p.client_name.trim());
+          if (workspaceId) cq = cq.or(`user_id.eq.${workspaceId},workspace_id.eq.${workspaceId}`);
+          const { data } = await cq.order('total_package_amount', { ascending: false }).limit(1);
+          targetClient = data?.[0] || null;
         }
       }
 
@@ -141,19 +148,45 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // 1B. Update Bookings & Events (`fw_projects`)
-      const targetPmId = targetModules.bookingsEvents ? (pmId || null) : null;
+      // 1B. Update Bookings & Events (`fw_projects`) with 42804 uuid/text trigger fallback
+      const targetPmId = targetModules.bookingsEvents && pmId && isValidUUID(pmId) ? pmId : null;
       const targetPmName = targetModules.bookingsEvents ? (pmName || null) : null;
-      let pQuery = supabaseAdmin.from('fw_projects').update({
-        project_manager_id: targetPmId,
-        project_manager_name: targetPmName,
-        updated_at: nowIso
-      });
 
+      const updateFpWithFallback = async (filterCol: 'id' | 'client_id', filterVal: string) => {
+        const { data: updRows, error: fpErr } = await supabaseAdmin
+          .from('fw_projects')
+          .update({
+            project_manager_id: targetPmId,
+            project_manager_name: targetPmName,
+            updated_at: nowIso,
+          })
+          .eq(filterCol, filterVal)
+          .select('id');
+
+        if (fpErr) {
+          if (fpErr.code === '42804' || fpErr.code === '22P02' || fpErr.code === '23503') {
+            const { data: fbRows, error: fpFbErr } = await supabaseAdmin
+              .from('fw_projects')
+              .update({
+                project_manager_name: targetPmName,
+                updated_at: nowIso,
+              })
+              .eq(filterCol, filterVal)
+              .select('id');
+            if (fpFbErr) throw new Error(fpFbErr.message);
+            return (fbRows || []).length;
+          }
+          throw new Error(fpErr.message);
+        }
+        return (updRows || []).length;
+      };
+
+      let updatedFpCount = 0;
       if (projectId) {
-        await pQuery.eq('id', projectId);
-      } else if (targetClient?.id) {
-        await pQuery.eq('client_id', targetClient.id);
+        updatedFpCount = await updateFpWithFallback('id', projectId);
+      }
+      if (updatedFpCount === 0 && targetClient?.id) {
+        await updateFpWithFallback('client_id', targetClient.id);
       }
 
       // 1C. Update Post-Production (`post_production_projects`)
@@ -163,17 +196,29 @@ export async function POST(req: NextRequest) {
           .from('post_production_projects')
           .select('id')
           .or(`client_id.eq.${targetId},id.eq.${targetId}`)
+          .limit(1)
           .maybeSingle();
 
         if (existingPPP) {
-          await supabaseAdmin
+          const ppPmId = targetModules.postProduction && pmId && isValidUUID(pmId) ? pmId : null;
+          const ppPmName = targetModules.postProduction ? (pmName || null) : null;
+          const { error: ppErr } = await supabaseAdmin
             .from('post_production_projects')
             .update({
-              project_manager_id: targetModules.postProduction ? (pmId || null) : null,
-              project_manager_name: targetModules.postProduction ? (pmName || null) : null,
+              project_manager_id: ppPmId,
+              project_manager_name: ppPmName,
               updated_at: nowIso
             })
             .eq('id', existingPPP.id);
+          if (ppErr && (ppErr.code === '42804' || ppErr.code === '22P02')) {
+            await supabaseAdmin
+              .from('post_production_projects')
+              .update({
+                project_manager_name: ppPmName,
+                updated_at: nowIso
+              })
+              .eq('id', existingPPP.id);
+          }
         }
       }
 

@@ -31,19 +31,25 @@ import {
   Layers,
   KeyRound,
   Zap,
+  Clock,
 } from 'lucide-react';
 import { getPublicGalleryUrl } from '@/lib/r2';
 import { FaceScannerModal } from '@/components/gallery/FaceScannerModal';
 import { PremagicLightbox } from '@/components/gallery/PremagicLightbox';
 import { ProgressiveSmoothImage } from '@/components/gallery/ProgressiveSmoothImage';
+import { JustifiedGalleryLayout } from '@/components/gallery/JustifiedGalleryLayout';
 
 interface PhotoItem {
   id: string;
   gallery_id: string;
   collection_id?: string | null;
+  folder_id?: string | null;
   preview_url: string;
   thumbnail_url: string;
-  original_key: string;
+  preview_key?: string;
+  thumbnail_key?: string;
+  thumb_key?: string;
+  original_key?: string | null;
   width: number;
   height: number;
   face_count: number;
@@ -130,9 +136,12 @@ function StrictZeroKnowledgeGuestContent() {
   const guestIdParam = searchParams?.get('guest') || searchParams?.get('guest_id');
   const tokenParam = searchParams?.get('token');
 
-  const currentGalleryStatus = (gallery?.status?.toUpperCase() === 'EXPIRED')
+  const rawStatus = (gallery?.status || '').toUpperCase();
+  const currentGalleryStatus = (rawStatus === 'PAUSED')
+    ? 'PAUSED'
+    : (rawStatus === 'EXPIRED')
     ? 'EXPIRED'
-    : (gallery?.status?.toUpperCase() === 'PUBLISHED' || (gallery?.is_active && gallery?.status?.toUpperCase() !== 'UNPUBLISHED'))
+    : (rawStatus === 'PUBLISHED' || (gallery?.is_active && rawStatus !== 'UNPUBLISHED'))
     ? 'PUBLISHED'
     : 'UNPUBLISHED';
 
@@ -144,20 +153,36 @@ function StrictZeroKnowledgeGuestContent() {
 
     try {
       let gal: any = null;
-      try {
-        const gRes = await fetch(`/api/gallery/events?id=${galleryIdOrSlug}`);
-        const gJson = await gRes.json();
-        if (gJson.success && gJson.gallery) {
-          gal = gJson.gallery;
-        }
-      } catch (_) {}
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(galleryIdOrSlug);
+
+      if (isUuid) {
+        try {
+          const gRes = await fetch(`/api/gallery/events?id=${galleryIdOrSlug}`);
+          const gJson = await gRes.json();
+          if (gJson.success && gJson.gallery) {
+            gal = gJson.gallery;
+          }
+        } catch (_) {}
+      }
 
       if (!gal) {
-        const slugRes = await fetch(`/api/gallery/events?slug=${galleryIdOrSlug}`);
-        const slugJson = await slugRes.json();
-        if (slugJson.success && slugJson.gallery) {
-          gal = slugJson.gallery;
-        }
+        try {
+          const slugRes = await fetch(`/api/gallery/events?slug=${encodeURIComponent(galleryIdOrSlug)}`);
+          const slugJson = await slugRes.json();
+          if (slugJson.success && slugJson.gallery) {
+            gal = slugJson.gallery;
+          }
+        } catch (_) {}
+      }
+
+      if (!gal && !isUuid) {
+        try {
+          const gRes = await fetch(`/api/gallery/events?id=${galleryIdOrSlug}`);
+          const gJson = await gRes.json();
+          if (gJson.success && gJson.gallery) {
+            gal = gJson.gallery;
+          }
+        } catch (_) {}
       }
 
       if (!gal) {
@@ -501,30 +526,30 @@ function StrictZeroKnowledgeGuestContent() {
     }
   };
 
-  // Download High-Res Original Photo directly from originals/ folder
+  // Download High-Res Photo directly (Web-Sharp Preview / Original fallback)
   const handleDownloadPhoto = async (photo: PhotoItem) => {
     setDownloadingId(photo.id);
     try {
-      const targetKey = photo.original_key || photo.preview_key || photo.preview_url;
-      const cleanName = photo.original_key ? photo.original_key.split('/').pop()?.replace(/^\d+_[a-z0-9]+_/, '') : `photo_${photo.id.slice(0, 8)}.jpg`;
+      const targetKey = photo.preview_key || photo.original_key || photo.preview_url;
+      const cleanName = (photo.preview_key || photo.original_key || '').split('/').pop()?.replace(/^\d+_[a-z0-9]+_/, '') || `photo_${photo.id.slice(0, 8)}.webp`;
       const res = await fetch(
-        `/api/gallery/download-url?key=${encodeURIComponent(targetKey)}&name=${encodeURIComponent(cleanName || 'photo.jpg')}`
+        `/api/gallery/download-url?key=${encodeURIComponent(targetKey)}&name=${encodeURIComponent(cleanName || 'photo.webp')}`
       );
       const json = await res.json();
       if (json.success && json.downloadUrl) {
         const link = document.createElement('a');
         link.href = json.downloadUrl;
-        link.setAttribute('download', cleanName || 'photo.jpg');
+        link.setAttribute('download', cleanName || 'photo.webp');
         link.target = '_blank';
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
       } else {
-        const fallbackUrl = `/api/gallery/image?key=${encodeURIComponent(targetKey)}&download=1&name=${encodeURIComponent(cleanName || 'photo.jpg')}`;
+        const fallbackUrl = `/api/gallery/image?key=${encodeURIComponent(targetKey)}&download=1&name=${encodeURIComponent(cleanName || 'photo.webp')}`;
         window.open(fallbackUrl, '_blank');
       }
     } catch (_) {
-      const targetKey = photo.original_key || photo.preview_url;
+      const targetKey = photo.preview_key || photo.original_key || photo.preview_url;
       window.open(`/api/gallery/image?key=${encodeURIComponent(targetKey)}&download=1`, '_blank');
     } finally {
       setDownloadingId(null);
@@ -543,10 +568,26 @@ function StrictZeroKnowledgeGuestContent() {
   };
 
   const targetFullPhotos = useMemo(() => {
-    return selectedCollectionId === 'all'
+    const list = selectedCollectionId === 'all'
       ? fullPhotos
       : fullPhotos.filter((p) => p.collection_id === selectedCollectionId);
+
+    return [...list].sort((a, b) => {
+      const timeA = (a as any).capture_time ? new Date((a as any).capture_time).getTime() : new Date(a.created_at).getTime();
+      const timeB = (b as any).capture_time ? new Date((b as any).capture_time).getTime() : new Date(b.created_at).getTime();
+      if (timeA !== timeB) return timeA - timeB;
+      const nameA = a.original_key || a.preview_key || a.id || '';
+      const nameB = b.original_key || b.preview_key || b.id || '';
+      return nameA.localeCompare(nameB);
+    });
   }, [fullPhotos, selectedCollectionId]);
+
+  const activeFullPhotos = useMemo(() => {
+    if (isPrivilegedMode && isUnlocked) {
+      return targetFullPhotos;
+    }
+    return matchedPhotos;
+  }, [isPrivilegedMode, isUnlocked, targetFullPhotos, matchedPhotos]);
 
   const displayedPrivilegedPhotos = useMemo(() => {
     return targetFullPhotos.slice(0, visibleFullCount);
@@ -583,6 +624,37 @@ function StrictZeroKnowledgeGuestContent() {
     );
   }
 
+  if (currentGalleryStatus === 'PAUSED') {
+    return (
+      <div className="min-h-screen bg-[#FAF9F5] flex flex-col items-center justify-center text-center p-6 space-y-6">
+        <div className="relative w-20 h-20 mx-auto">
+          <div className="absolute inset-0 rounded-3xl bg-amber-500/20 animate-pulse pointer-events-none" />
+          <div className="relative w-20 h-20 rounded-3xl bg-amber-50 border border-amber-200 text-amber-600 flex items-center justify-center shadow-lg">
+            <Lock className="w-10 h-10" />
+          </div>
+        </div>
+
+        <div className="space-y-2 max-w-md">
+          <span className="px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-[10px] font-black uppercase tracking-widest border border-amber-300">
+            Subscription Inactive
+          </span>
+          <h1 className="text-2xl sm:text-3xl font-black text-zinc-900 tracking-tight">
+            Gallery Paused — Contact Studio to Unlock
+          </h1>
+          <p className="text-xs sm:text-sm text-zinc-500 leading-relaxed">
+            Public viewing for <span className="font-bold text-zinc-800">{gallery.title}</span> is temporarily paused. Your photos are safely preserved in cloud storage.
+          </p>
+        </div>
+
+        <div className="bg-white rounded-3xl p-6 border border-[#E7E2D8] shadow-sm max-w-sm w-full space-y-3 text-center">
+          <p className="text-xs text-zinc-600 leading-relaxed">
+            Please contact the studio owner to restore instant live access to this photo gallery.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   if (currentGalleryStatus === 'EXPIRED') {
     return (
       <div className="min-h-screen bg-[#FAF9F5] flex flex-col items-center justify-center text-center p-6 space-y-6">
@@ -597,27 +669,62 @@ function StrictZeroKnowledgeGuestContent() {
           <span className="px-3 py-1 rounded-full bg-rose-100 text-rose-800 text-[10px] font-black uppercase tracking-widest border border-rose-300">
             Access Concluded
           </span>
-          <h1 className="text-2xl sm:text-3xl font-black text-zinc-900 tracking-tight">
-            This Wedding Gallery Has Expired
+          <h1 
+            style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
+            className="text-2xl sm:text-3xl font-medium text-zinc-900 tracking-tight"
+          >
+            Gallery Access Expired
           </h1>
           <p className="text-xs sm:text-sm text-zinc-500 leading-relaxed">
-            Public access to photos for <span className="font-bold text-zinc-800">{gallery.title}</span> has closed or reached its validity limit.
+            Public viewing access for <span className="font-bold text-zinc-800">{gallery.title}</span> has closed or reached its validity limit.
           </p>
         </div>
 
-        <div className="bg-white rounded-3xl p-6 border border-[#E7E2D8] shadow-sm max-w-sm w-full space-y-3 text-center">
+        <div className="bg-white rounded-3xl p-6 border border-[#E7E2D8] shadow-sm max-w-sm w-full space-y-4 text-center">
           <p className="text-xs text-zinc-600 leading-relaxed">
-            If you are a family member, guest, or client needing to view or download photos, please contact the studio owner directly to request access.
+            To view or download photos, please contact the studio owner directly.
           </p>
-          <a
-            href="/"
-            className="inline-block px-5 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs transition shadow-sm"
-          >
-            Return to StudioCore
-          </a>
         </div>
       </div>
     );
+  }
+
+  if (currentGalleryStatus === 'UNPUBLISHED') {
+    // Guest access (QR standee or guest link) is allowed through so guests can pre-register their selfie and contact details before photos are uploaded/published.
+    if (!isPrivilegedMode) {
+      // Handled by guest privacy/pre-registration hero and registration selfie confirmation below
+    } else {
+      return (
+        <div className="min-h-screen bg-[#FAF9F5] flex flex-col items-center justify-center text-center p-6 space-y-6">
+          <div className="relative w-20 h-20 mx-auto">
+            <div className="w-20 h-20 rounded-3xl bg-amber-50 border border-amber-200 text-amber-600 flex items-center justify-center shadow-lg">
+              <Clock className="w-10 h-10" />
+            </div>
+          </div>
+
+          <div className="space-y-2 max-w-md">
+            <span className="px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-[10px] font-black uppercase tracking-widest border border-amber-300">
+              Gallery Unpublished
+            </span>
+            <h1 
+              style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
+              className="text-2xl sm:text-3xl font-medium text-zinc-900 tracking-tight"
+            >
+              Gallery Not Published Yet
+            </h1>
+            <p className="text-xs sm:text-sm text-zinc-500 leading-relaxed">
+              This wedding gallery for <span className="font-bold text-zinc-800">{gallery.title}</span> is not yet published.
+            </p>
+          </div>
+
+          <div className="bg-white rounded-3xl p-6 border border-[#E7E2D8] shadow-sm max-w-sm w-full space-y-4 text-center">
+            <p className="text-xs text-zinc-600 leading-relaxed">
+              To view photos or album selection, please contact the studio owner.
+            </p>
+          </div>
+        </div>
+      );
+    }
   }
 
   return (
@@ -945,45 +1052,20 @@ function StrictZeroKnowledgeGuestContent() {
                       </div>
                     </div>
 
-                    {/* Matched Justified Multi-Column Grid */}
-                    <div className="columns-2 sm:columns-3 md:columns-4 lg:columns-5 gap-3.5 space-y-3.5">
-                      {matchedPhotos.map((photo, idx) => (
-                        <div
-                          key={photo.id}
-                          onClick={() => setSelectedPhotoIndex(idx)}
-                          className="group relative break-inside-avoid rounded-2xl sm:rounded-3xl overflow-hidden bg-zinc-100 border border-[#E7E2D8] shadow-2xs hover:shadow-lg transition-all duration-300 cursor-pointer"
-                        >
-                          <ProgressiveSmoothImage
-                            src={photo.thumbnail_url || photo.preview_url}
-                            thumbnailSrc={photo.thumbnail_url}
-                            alt="Matched Photo"
-                            aspectRatio={photo.width && photo.height ? `${photo.width}/${photo.height}` : undefined}
-                            className="w-full h-auto object-cover group-hover:scale-[1.02] transition-transform duration-500"
-                          />
-
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/30 opacity-0 group-hover:opacity-100 transition-opacity" />
-
-                          {/* Actions Bottom Bar */}
-                          <div className="absolute bottom-2.5 inset-x-2.5 flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity">
-                            <span className="text-[10px] font-mono text-zinc-300">
-                              Photo #{idx + 1}
-                            </span>
-
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDownloadPhoto(photo);
-                              }}
-                              className="p-1.5 rounded-full bg-amber-500 hover:bg-amber-400 text-zinc-950 transition shadow-md cursor-pointer"
-                              title="Download High-Res"
-                            >
-                              <Download className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                    {/* Matched Photos Grid (True Justified Layout) */}
+                    <JustifiedGalleryLayout
+                      photos={matchedPhotos}
+                      layoutConfig={{
+                        style: 'justified',
+                        gap: 12,
+                        cornerRadius: 16,
+                      }}
+                      onPhotoClick={(photo, idx) => {
+                        const fullIdx = activeFullPhotos.findIndex((p) => p.id === photo.id);
+                        setSelectedPhotoIndex(fullIdx >= 0 ? fullIdx : idx);
+                      }}
+                      onDownloadPhoto={handleDownloadPhoto}
+                    />
                   </>
                 ) : (
                   <div className="bg-white rounded-3xl p-8 sm:p-12 border border-[#E7E2D8] shadow-sm text-center space-y-5 max-w-md mx-auto">
@@ -1058,44 +1140,20 @@ function StrictZeroKnowledgeGuestContent() {
                   </div>
                 )}
 
-                {/* All Photos Grid */}
-                <div className="columns-2 sm:columns-3 md:columns-4 lg:columns-5 gap-3.5 space-y-3.5">
-                  {targetFullPhotos.map((photo, idx) => (
-                    <div
-                      key={photo.id}
-                      onClick={() => setSelectedPhotoIndex(idx)}
-                      className="group relative break-inside-avoid rounded-2xl sm:rounded-3xl overflow-hidden bg-zinc-100 border border-[#E7E2D8] shadow-2xs hover:shadow-lg transition-all duration-300 cursor-pointer"
-                    >
-                      <ProgressiveSmoothImage
-                        src={photo.thumbnail_url || photo.preview_url}
-                        thumbnailSrc={photo.thumbnail_url}
-                        alt="Event Photo"
-                        aspectRatio={photo.width && photo.height ? `${photo.width}/${photo.height}` : undefined}
-                        className="w-full h-auto object-cover group-hover:scale-[1.02] transition-transform duration-500"
-                      />
-
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/30 opacity-0 group-hover:opacity-100 transition-opacity" />
-
-                      <div className="absolute bottom-2.5 inset-x-2.5 flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity">
-                        <span className="text-[10px] font-mono text-zinc-300">
-                          #{idx + 1}
-                        </span>
-
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDownloadPhoto(photo);
-                          }}
-                          className="p-1.5 rounded-full bg-amber-500 hover:bg-amber-400 text-zinc-950 transition shadow-md cursor-pointer"
-                          title="Download High-Res"
-                        >
-                          <Download className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                {/* All Photos Grid (True Justified Layout) */}
+                <JustifiedGalleryLayout
+                  photos={targetFullPhotos}
+                  layoutConfig={{
+                    style: 'justified',
+                    gap: 12,
+                    cornerRadius: 16,
+                  }}
+                  onPhotoClick={(photo, idx) => {
+                    const fullIdx = activeFullPhotos.findIndex((p) => p.id === photo.id);
+                    setSelectedPhotoIndex(fullIdx >= 0 ? fullIdx : idx);
+                  }}
+                  onDownloadPhoto={handleDownloadPhoto}
+                />
               </div>
             )}
           </div>
@@ -1136,75 +1194,28 @@ function StrictZeroKnowledgeGuestContent() {
               </div>
             )}
 
-            {/* Privileged Full Photo Justified Multi-Column Grid */}
-            <div className="columns-2 sm:columns-3 md:columns-4 lg:columns-5 gap-3.5 space-y-3.5">
-              {displayedPhotos.map((photo, idx) => {
-                const isSelected = selectedForAlbum.has(photo.id);
-                return (
-                  <div
-                    key={photo.id}
-                    onClick={() => {
-                      if (isSelectionMode) {
-                        const next = new Set(selectedForAlbum);
-                        if (isSelected) next.delete(photo.id);
-                        else next.add(photo.id);
-                        setSelectedForAlbum(next);
-                      } else {
-                        setSelectedPhotoIndex(idx);
-                      }
-                    }}
-                    className={`group relative break-inside-avoid rounded-2xl sm:rounded-3xl overflow-hidden bg-zinc-100 border transition-all duration-300 cursor-pointer ${
-                      isSelected
-                        ? 'border-amber-500 ring-4 ring-amber-500/20'
-                        : 'border-[#E7E2D8] hover:shadow-lg'
-                    }`}
-                  >
-                    <ProgressiveSmoothImage
-                      src={photo.thumbnail_url || photo.preview_url}
-                      thumbnailSrc={photo.thumbnail_url}
-                      alt="Wedding photo"
-                      aspectRatio={photo.width && photo.height ? `${photo.width}/${photo.height}` : undefined}
-                      className="w-full h-auto object-cover group-hover:scale-[1.02] transition-transform duration-500"
-                    />
-
-                    {isSelectionMode && (
-                      <div className="absolute top-2.5 right-2.5 z-10">
-                        {isSelected ? (
-                          <div className="w-6 h-6 rounded-lg bg-amber-500 text-white flex items-center justify-center shadow-md">
-                            <CheckSquare className="w-4 h-4" />
-                          </div>
-                        ) : (
-                          <div className="w-6 h-6 rounded-lg bg-black/40 text-white/80 flex items-center justify-center backdrop-blur-xs">
-                            <Square className="w-4 h-4" />
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/30 opacity-0 group-hover:opacity-100 transition-opacity" />
-
-                    <div className="absolute bottom-2.5 inset-x-2.5 flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity">
-                      {photo.face_count > 0 ? (
-                        <span className="px-2 py-0.5 rounded-full bg-black/60 backdrop-blur-md text-[10px] font-bold text-white">
-                          👥 {photo.face_count}
-                        </span>
-                      ) : <span />}
-
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDownloadPhoto(photo);
-                        }}
-                        className="p-1.5 rounded-full bg-amber-500 hover:bg-amber-400 text-zinc-950 transition shadow-md cursor-pointer"
-                        title="Download High-Res"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            {/* Privileged Full Photo Grid (True Justified Layout) */}
+            <JustifiedGalleryLayout
+              photos={displayedPhotos}
+              layoutConfig={{
+                style: 'justified',
+                gap: 12,
+                cornerRadius: 16,
+              }}
+              isSelectionMode={isSelectionMode}
+              selectedForAlbum={selectedForAlbum}
+              onPhotoClick={(photo, idx) => {
+                const fullIdx = activeFullPhotos.findIndex((p) => p.id === photo.id);
+                setSelectedPhotoIndex(fullIdx >= 0 ? fullIdx : idx);
+              }}
+              onSelectPhoto={(photo) => {
+                const next = new Set(selectedForAlbum);
+                if (next.has(photo.id)) next.delete(photo.id);
+                else next.add(photo.id);
+                setSelectedForAlbum(next);
+              }}
+              onDownloadPhoto={handleDownloadPhoto}
+            />
 
             {hasMorePrivilegedPhotos && (
               <div className="py-8 flex flex-col items-center justify-center gap-3">
@@ -1244,7 +1255,7 @@ function StrictZeroKnowledgeGuestContent() {
           5. PIN UNLOCK MODAL (Zero-Trust Gatekeeper)
       ───────────────────────────────────────────────────────────── */}
       {showPinModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+        <div className="fixed inset-0 z-[110000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
           <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-sm w-full border border-zinc-200 shadow-2xl space-y-6 animate-in zoom-in-95">
             <div className="text-center space-y-2">
               <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto">
@@ -1289,9 +1300,9 @@ function StrictZeroKnowledgeGuestContent() {
       {/* ─────────────────────────────────────────────────────────────
           6. PREMAGIC / FOTOOWL TOUCH-SWIPE LIGHTBOX WITH SMART HD ZOOM
       ───────────────────────────────────────────────────────────── */}
-      {selectedPhotoIndex !== null && displayedPhotos[selectedPhotoIndex] && (
+      {selectedPhotoIndex !== null && activeFullPhotos[selectedPhotoIndex] && (
         <PremagicLightbox
-          photos={displayedPhotos}
+          photos={activeFullPhotos}
           currentIndex={selectedPhotoIndex}
           onClose={() => setSelectedPhotoIndex(null)}
           onNavigate={(idx) => setSelectedPhotoIndex(idx)}

@@ -80,4 +80,7 @@ export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
     detectSessionInUrl: false,
     storageKey: 'sb-admin-auth-token',
   },
+  global: {
+    fetch: customResilientFetch,
+  },
 });

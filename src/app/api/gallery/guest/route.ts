@@ -53,3 +53,40 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }
+
+export async function PATCH(req: NextRequest) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const guestId = searchParams.get('id') || searchParams.get('guest_id');
+    const body = await req.json();
+
+    if (!guestId) {
+      return NextResponse.json({ success: false, error: 'guest_id is required' }, { status: 400 });
+    }
+
+    const updates: any = { updated_at: new Date().toISOString() };
+    if (Array.isArray(body.matched_photo_ids)) {
+      updates.matched_photo_ids = body.matched_photo_ids;
+    }
+    if (body.guest_name) updates.guest_name = body.guest_name;
+    if (body.guest_phone) updates.guest_phone = body.guest_phone;
+    if (body.guest_email) updates.guest_email = body.guest_email;
+
+    const { data: updated, error } = await supabaseAdmin
+      .from('event_guest_registrations')
+      .update(updates)
+      .eq('id', guestId)
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      console.error('Error updating guest:', error);
+      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true, guest: updated });
+  } catch (err: any) {
+    console.error('Guest PATCH exception:', err);
+    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+  }
+}

@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { resolveRequestUser } from '@/lib/auth/admin-guard';
 import { extractFacesFromS3Key, extractFacesBatchFromS3Keys, cosineSimilarity, normalizeVector } from '@/lib/faceAI';
 import { deleteGalleryObjects, deleteGalleryPrefix } from '@/lib/storage/galleryB2Client';
+import { decrementWorkspaceStorage } from '@/lib/storage/galleryStorageQuota';
 
 export const dynamic = 'force-dynamic';
 
@@ -268,14 +269,14 @@ export async function GET(req: NextRequest) {
         const { data } = await supabaseAdmin
           .from('event_galleries')
           .select('*')
-          .or(`slug.eq.${slug},id.eq.${slug}`)
+          .or(`slug.ilike.${slug},id.eq.${slug}`)
           .limit(1);
         single = data?.[0] || null;
       } else if (slug) {
         const { data } = await supabaseAdmin
           .from('event_galleries')
           .select('*')
-          .eq('slug', slug)
+          .ilike('slug', slug)
           .limit(1);
         single = data?.[0] || null;
       }
@@ -393,10 +394,11 @@ export async function GET(req: NextRequest) {
     const galleryIds = (galleries || []).map((g) => g.id);
     let analyticsMap: Record<string, { views: number; downloads: number }> = {};
     let faceSearchesMap: Record<string, number> = {};
+    let photoCountMap: Record<string, number> = {};
 
     if (galleryIds.length > 0) {
       try {
-        const [configRowsRes, guestRowsRes] = await Promise.all([
+        const [configRowsRes, guestRowsRes, ...countResults] = await Promise.all([
           supabaseAdmin
             .from('gallery_album_selections')
             .select('gallery_id, notes')
@@ -406,6 +408,14 @@ export async function GET(req: NextRequest) {
             .from('event_guest_registrations')
             .select('gallery_id')
             .in('gallery_id', galleryIds),
+          ...galleryIds.map((gid) =>
+            supabaseAdmin
+              .from('gallery_photos')
+              .select('id', { count: 'exact', head: true })
+              .eq('gallery_id', gid)
+              .then((res) => ({ gid, count: res.count ?? 0 }))
+              .catch(() => ({ gid, count: 0 }))
+          ),
         ]);
 
         (configRowsRes.data || []).forEach((row: any) => {
@@ -423,13 +433,19 @@ export async function GET(req: NextRequest) {
         (guestRowsRes.data || []).forEach((row: any) => {
           faceSearchesMap[row.gallery_id] = (faceSearchesMap[row.gallery_id] || 0) + 1;
         });
+
+        countResults.forEach((cr: any) => {
+          if (cr && cr.gid) {
+            photoCountMap[cr.gid] = cr.count;
+          }
+        });
       } catch (_) {}
     }
 
     // Calculate aggregated metrics
     const enriched = (galleries || []).map((g) => {
       const photos = g.gallery_photos || [];
-      const totalPhotos = photos.length;
+      const totalPhotos = photoCountMap[g.id] !== undefined ? photoCountMap[g.id] : photos.length;
       const totalBytes = photos.reduce((acc: number, p: any) => acc + (Number(p.size_bytes) || 0), 0);
       const totalFaces = photos.reduce((acc: number, p: any) => acc + (Number(p.face_count) || 0), 0);
 
@@ -682,6 +698,18 @@ export async function PATCH(req: NextRequest) {
     if (event_date !== undefined) updates.event_date = event_date;
     if (is_active !== undefined) updates.is_active = is_active;
     if (status !== undefined) updates.status = status;
+    if (body.expired_at !== undefined) updates.expired_at = body.expired_at;
+    if (body.scheduled_purge_at !== undefined) updates.scheduled_purge_at = body.scheduled_purge_at;
+    if ((status === 'paused' || status === 'expired') && !updates.expired_at && !existing?.expired_at) {
+      const now = new Date();
+      updates.expired_at = now.toISOString();
+      updates.scheduled_purge_at = new Date(now.getTime() + 180 * 24 * 60 * 60 * 1000).toISOString();
+    } else if (status === 'active' || status === 'PUBLISHED') {
+      if (body.expired_at === undefined && body.scheduled_purge_at === undefined) {
+        updates.expired_at = null;
+        updates.scheduled_purge_at = null;
+      }
+    }
     if (pin_code !== undefined) updates.pin_code = pin_code ? String(pin_code).trim() : null;
     if (guest_pin !== undefined) updates.guest_pin = guest_pin ? String(guest_pin).trim() : null;
     if (admin_pin !== undefined) updates.admin_pin = admin_pin ? String(admin_pin).trim() : null;
@@ -937,10 +965,10 @@ export async function DELETE(req: NextRequest) {
       }
     }
 
-    // 2. Fetch all photos belonging to this gallery to retrieve Backblaze B2 storage keys
+    // 2. Fetch all photos belonging to this gallery to retrieve Backblaze B2 storage keys & sizes
     const { data: galleryPhotos } = await supabaseAdmin
       .from('gallery_photos')
-      .select('id, original_key, preview_key, thumbnail_key')
+      .select('id, original_key, preview_key, thumbnail_key, thumb_key, size_bytes')
       .eq('gallery_id', id);
 
     const photoIds = (galleryPhotos || []).map((p) => p.id);
@@ -948,11 +976,17 @@ export async function DELETE(req: NextRequest) {
     if (existing?.cover_url) {
       storageKeys.push(existing.cover_url);
     }
-    (galleryPhotos || []).forEach((p) => {
+    (galleryPhotos || []).forEach((p: any) => {
       if (p.original_key) storageKeys.push(p.original_key);
       if (p.preview_key) storageKeys.push(p.preview_key);
       if (p.thumbnail_key) storageKeys.push(p.thumbnail_key);
+      if (p.thumb_key) storageKeys.push(p.thumb_key);
     });
+
+    const freedBytes = (galleryPhotos || []).reduce(
+      (sum, p: any) => sum + (Number(p.size_bytes) || 0),
+      0
+    );
 
     // 3. Purge explicit storage keys from Backblaze B2
     if (storageKeys.length > 0) {
@@ -964,11 +998,15 @@ export async function DELETE(req: NextRequest) {
       }
     }
 
-    // 4. Purge entire S3 folder prefixes for this gallery to clean up any uncataloged or thumbnail artifacts
+    // 4. Purge entire S3 folder prefixes for this gallery to ensure zero orphan files in B2
     const prefixesToPurge = new Set<string>();
     if (existing?.workspace_id) {
+      prefixesToPurge.add(`gallery/${existing.workspace_id}/${id}/`);
+      prefixesToPurge.add(`workspaces/${existing.workspace_id}/events/${id}/`);
       prefixesToPurge.add(`galleries/${existing.workspace_id}/${id}/`);
     }
+    prefixesToPurge.add(`gallery/default/${id}/`);
+    prefixesToPurge.add(`workspaces/default/events/${id}/`);
     prefixesToPurge.add(`galleries/00000000-0000-0000-0000-000000000000/${id}/`);
     prefixesToPurge.add(`events/${id}/`);
     if (existing?.r2_folder_prefix) {
@@ -996,12 +1034,23 @@ export async function DELETE(req: NextRequest) {
       await supabaseAdmin.from('gallery_photos').delete().eq('gallery_id', id);
       await supabaseAdmin.from('gallery_collections').delete().eq('gallery_id', id);
       await supabaseAdmin.from('gallery_selections').delete().eq('gallery_id', id);
+      await supabaseAdmin.from('gallery_album_selections').delete().eq('gallery_id', id);
       await supabaseAdmin.from('gallery_guests').delete().eq('gallery_id', id);
+      await supabaseAdmin.from('event_guest_registrations').delete().eq('gallery_id', id);
     } catch (dbCascadeErr) {
       console.warn('[GalleryEvents] Supabase cascade cleanup notice:', dbCascadeErr);
     }
 
     const { error } = await supabaseAdmin.from('event_galleries').delete().eq('id', id);
+
+    if (error) throw error;
+
+    // 6. Subtract freed bytes from workspace storage quota
+    if (freedBytes > 0 && existing?.workspace_id) {
+      decrementWorkspaceStorage(existing.workspace_id, id, freedBytes).catch((err) =>
+        console.warn('[GalleryEvents] Storage decrement notice:', err)
+      );
+    }
 
     if (error) throw error;
     return NextResponse.json({

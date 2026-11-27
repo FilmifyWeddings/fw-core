@@ -38,6 +38,7 @@ import {
   ArrowDown,
   ArrowUp,
   Share2,
+  Clock,
   ChevronDown,
   SlidersHorizontal,
 } from 'lucide-react';
@@ -89,11 +90,13 @@ interface PhotoItem {
   id: string;
   gallery_id: string;
   collection_id?: string | null;
+  folder_id?: string | null;
   preview_url: string;
   thumbnail_url: string;
-  original_key: string;
+  original_key?: string | null;
   preview_key?: string;
   thumbnail_key?: string;
+  thumb_key?: string;
   width: number;
   height: number;
   face_count: number;
@@ -199,6 +202,7 @@ function GuestSlugGalleryContent() {
   const [isVerified, setIsVerified] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [isAlreadyRegistered, setIsAlreadyRegistered] = useState(false);
+  const [isResolvingGuest, setIsResolvingGuest] = useState(false);
   const [matchedPhotos, setMatchedPhotos] = useState<PhotoItem[]>([]);
   const [guestName, setGuestName] = useState('');
   const [guestPhone, setGuestPhone] = useState('');
@@ -424,6 +428,7 @@ function GuestSlugGalleryContent() {
 
     let isMounted = true;
     const fetchGuestData = async (guestId: string, tok?: string) => {
+      setIsResolvingGuest(true);
       try {
         const res = await fetch(`/api/gallery/guest?id=${encodeURIComponent(guestId)}${tok ? `&token=${encodeURIComponent(tok)}` : ''}`);
         const json = await res.json();
@@ -435,6 +440,7 @@ function GuestSlugGalleryContent() {
         setGuestEmail(g.guest_email || '');
         setIsVerified(true);
         setHasSearched(true);
+        setIsMyPhotosActive(true);
         setGuestSavedSession({ id: g.id, token: g.access_token, name: g.guest_name });
 
         // Save session in localStorage so subsequent QR scans bypass login
@@ -472,12 +478,20 @@ function GuestSlugGalleryContent() {
               body: JSON.stringify({
                 gallery_id: gallery.id,
                 embedding: rawEmb,
-                threshold: 0.40,
+                match_threshold: 0.40,
               }),
             });
             const matchJson = await matchRes.json();
             if (isMounted && matchJson.success && Array.isArray(matchJson.photos) && matchJson.photos.length > 0) {
               setMatchedPhotos(matchJson.photos);
+              const newPhotoIds = matchJson.photos.map((p: any) => p.id);
+              if (newPhotoIds.length !== (g.matched_photo_ids?.length || 0)) {
+                fetch(`/api/gallery/guest?id=${encodeURIComponent(g.id)}`, {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ matched_photo_ids: newPhotoIds }),
+                }).catch(() => {});
+              }
             }
           } catch (mErr) {
             console.warn('Auto match error:', mErr);
@@ -487,6 +501,8 @@ function GuestSlugGalleryContent() {
         }
       } catch (err) {
         console.warn('Error auto-resolving guest:', err);
+      } finally {
+        if (isMounted) setIsResolvingGuest(false);
       }
     };
 
@@ -905,7 +921,7 @@ function GuestSlugGalleryContent() {
 
     // Fallback: fetch blob or stream directly
     try {
-      const fallbackUrl = `/api/gallery/image?key=${encodeURIComponent(targetKey)}&download=1&name=${encodeURIComponent(originalFileName)}`;
+      const fallbackUrl = `/api/gallery/image?key=${encodeURIComponent(targetKey)}&download=1&format=jpg&name=${encodeURIComponent(originalFileName)}`;
       window.open(fallbackUrl, '_blank');
     } catch (_) {
       window.open(photo.preview_url, '_blank');
@@ -1002,9 +1018,19 @@ function GuestSlugGalleryContent() {
   };
 
   const targetFullPhotos = useMemo(() => {
-    return selectedCollectionId === 'all' || selectedCollectionId === 'selected'
+    const list = selectedCollectionId === 'all' || selectedCollectionId === 'selected'
       ? fullPhotos
       : fullPhotos.filter((p) => p.collection_id === selectedCollectionId);
+
+    // Natural chronological lineup: row-by-row by actual photo date & time (oldest to newest)
+    return [...list].sort((a, b) => {
+      const timeA = (a as any).capture_time ? new Date((a as any).capture_time).getTime() : new Date(a.created_at).getTime();
+      const timeB = (b as any).capture_time ? new Date((b as any).capture_time).getTime() : new Date(b.created_at).getTime();
+      if (timeA !== timeB) return timeA - timeB;
+      const nameA = a.original_key || a.preview_key || a.id || '';
+      const nameB = b.original_key || b.preview_key || b.id || '';
+      return nameA.localeCompare(nameB);
+    });
   }, [fullPhotos, selectedCollectionId]);
 
   const displayedPrivilegedPhotos = useMemo(() => {
@@ -1337,6 +1363,27 @@ function GuestSlugGalleryContent() {
     return () => clearTimeout(timer);
   }, [selectedForAlbum, gallery?.id, isSelectionMode, selectorEmail, selectorName, syncSelectionToBackend]);
 
+  const activeFullPhotos = useMemo(() => {
+    // 1. In Guest Access mode (!isPrivilegedMode): STRICT PRIVACY - ONLY show guest's matched photos!
+    if (!isPrivilegedMode) {
+      if (selectedCollectionId === 'all') {
+        return matchedPhotos;
+      }
+      return matchedPhotos.filter((p) => p.collection_id === selectedCollectionId);
+    }
+
+    // 2. Privileged Access mode (Full Access / Album Selection)
+    if (selectedCollectionId === 'my_photos') {
+      return matchedPhotos;
+    }
+
+    if (isSelectionMode && (showOnlySelected || selectedCollectionId === 'selected')) {
+      return fullPhotos.filter((p) => selectedForAlbum.has(p.id));
+    }
+
+    return isUnlocked ? targetFullPhotos : [];
+  }, [isPrivilegedMode, selectedCollectionId, matchedPhotos, isSelectionMode, showOnlySelected, fullPhotos, targetFullPhotos, selectedForAlbum, isUnlocked]);
+
   const displayedPhotos = useMemo(() => {
     // 1. In Guest Access mode (!isPrivilegedMode): STRICT PRIVACY - ONLY show guest's matched photos!
     if (!isPrivilegedMode) {
@@ -1358,7 +1405,7 @@ function GuestSlugGalleryContent() {
     return isUnlocked ? displayedPrivilegedPhotos : [];
   }, [isPrivilegedMode, selectedCollectionId, matchedPhotos, isSelectionMode, showOnlySelected, targetFullPhotos, selectedForAlbum, isUnlocked, displayedPrivilegedPhotos]);
 
-  if (loading) {
+  if (loading || isResolvingGuest) {
     const rawBranding = gallery?.studio_branding;
     const currentStudioName = rawBranding?.studio_name;
     const currentStudioLogo = rawBranding?.logo_url;
@@ -1420,43 +1467,6 @@ function GuestSlugGalleryContent() {
     );
   }
 
-  if (currentGalleryStatus === 'EXPIRED') {
-    return (
-      <div className="min-h-screen bg-[#FAF9F5] flex flex-col items-center justify-center text-center p-6 space-y-6">
-        <div className="relative w-20 h-20 mx-auto">
-          <div className="absolute inset-0 rounded-3xl bg-rose-500/20 animate-ping pointer-events-none" />
-          <div className="relative w-20 h-20 rounded-3xl bg-rose-50 border border-rose-200 text-rose-600 flex items-center justify-center shadow-lg">
-            <Lock className="w-10 h-10" />
-          </div>
-        </div>
-
-        <div className="space-y-2 max-w-md">
-          <span className="px-3 py-1 rounded-full bg-rose-100 text-rose-800 text-[10px] font-black uppercase tracking-widest border border-rose-300">
-            Access Concluded
-          </span>
-          <h1 className="text-2xl sm:text-3xl font-black text-zinc-900 tracking-tight">
-            This Wedding Gallery Has Expired
-          </h1>
-          <p className="text-xs sm:text-sm text-zinc-500 leading-relaxed">
-            Public access to photos for <span className="font-bold text-zinc-800">{gallery.title}</span> has closed or reached its validity limit.
-          </p>
-        </div>
-
-        <div className="bg-white rounded-3xl p-6 border border-[#E7E2D8] shadow-sm max-w-sm w-full space-y-3 text-center">
-          <p className="text-xs text-zinc-600 leading-relaxed">
-            If you are a family member, guest, or client needing to view or download photos, please contact the studio owner directly to request access.
-          </p>
-          <a
-            href="/"
-            className="inline-block px-5 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs transition shadow-sm"
-          >
-            Return to StudioCore
-          </a>
-        </div>
-      </div>
-    );
-  }
-
   const studioBranding: any = gallery.studio_branding;
   const studioName = studioBranding?.studio_name || 'Wedding Studio';
   const studioLogo = studioBranding?.logo_url;
@@ -1473,6 +1483,107 @@ function GuestSlugGalleryContent() {
     facebook: true,
     youtube: true,
   };
+
+  if (currentGalleryStatus === 'EXPIRED') {
+    return (
+      <div className="min-h-screen bg-[#FAF9F5] flex flex-col items-center justify-center text-center p-6 space-y-6">
+        <div className="relative w-20 h-20 mx-auto">
+          <div className="absolute inset-0 rounded-3xl bg-rose-500/20 animate-ping pointer-events-none" />
+          <div className="relative w-20 h-20 rounded-3xl bg-rose-50 border border-rose-200 text-rose-600 flex items-center justify-center shadow-lg">
+            <Lock className="w-10 h-10" />
+          </div>
+        </div>
+
+        <div className="space-y-2 max-w-md">
+          <span className="px-3 py-1 rounded-full bg-rose-100 text-rose-800 text-[10px] font-black uppercase tracking-widest border border-rose-300">
+            Access Concluded
+          </span>
+          <h1 
+            style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
+            className="text-2xl sm:text-3xl font-medium text-zinc-900 tracking-tight"
+          >
+            Gallery Access Expired
+          </h1>
+          <p className="text-xs sm:text-sm text-zinc-500 leading-relaxed">
+            Public viewing access for <span className="font-bold text-zinc-800">{gallery.title}</span> has closed or reached its validity limit.
+          </p>
+        </div>
+
+        <div className="bg-white rounded-3xl p-6 border border-[#E7E2D8] shadow-sm max-w-sm w-full space-y-4 text-center">
+          <p className="text-xs text-zinc-600 leading-relaxed">
+            To view or download photos, please contact the studio owner (<span className="font-semibold text-zinc-900">{studioName}</span>) directly.
+          </p>
+          {studioPhone ? (
+            <a
+              href={`https://wa.me/${studioPhone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Hello, I am accessing the gallery "${gallery.title}". Please renew or restore access.`)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition shadow-sm"
+            >
+              <span>Connect on WhatsApp</span>
+            </a>
+          ) : studioEmail ? (
+            <p className="text-xs font-bold text-zinc-700">
+              Email: {studioEmail}
+            </p>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
+  if (currentGalleryStatus === 'UNPUBLISHED') {
+    // Guest access (QR standee or guest link) is allowed through so guests can pre-register their selfie and contact details before photos are uploaded/published.
+    if (!isPrivilegedMode) {
+      // Handled by isGuestPreRegistration (hero pre-registration UI) and isGuestRegisteredUnpublished (celebratory confirmation) below
+    } else {
+      return (
+        <div className="min-h-screen bg-[#FAF9F5] flex flex-col items-center justify-center text-center p-6 space-y-6">
+          <div className="relative w-20 h-20 mx-auto">
+            <div className="w-20 h-20 rounded-3xl bg-amber-50 border border-amber-200 text-amber-600 flex items-center justify-center shadow-lg">
+              <Clock className="w-10 h-10" />
+            </div>
+          </div>
+
+          <div className="space-y-2 max-w-md">
+            <span className="px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-[10px] font-black uppercase tracking-widest border border-amber-300">
+              Gallery Unpublished
+            </span>
+            <h1 
+              style={{ fontFamily: "'Playfair Display', 'Cormorant Garamond', Georgia, serif" }}
+              className="text-2xl sm:text-3xl font-medium text-zinc-900 tracking-tight"
+            >
+              Gallery Not Published Yet
+            </h1>
+            <p className="text-xs sm:text-sm text-zinc-500 leading-relaxed">
+              This wedding gallery for <span className="font-bold text-zinc-800">{gallery.title}</span> is currently being curated and has not been published yet.
+            </p>
+          </div>
+
+          <div className="bg-white rounded-3xl p-6 border border-[#E7E2D8] shadow-sm max-w-sm w-full space-y-4 text-center">
+            <p className="text-xs text-zinc-600 leading-relaxed">
+              To view photos or album selection, please contact the studio owner (<span className="font-semibold text-zinc-900">{studioName}</span>).
+            </p>
+            {studioPhone ? (
+              <a
+                href={`https://wa.me/${studioPhone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Hello, I am accessing the gallery "${gallery.title}". Please publish or grant access.`)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition shadow-sm"
+              >
+                <span>Connect on WhatsApp</span>
+              </a>
+            ) : (
+              <p className="text-xs font-bold text-zinc-700">
+                Contact: {studioEmail || studioName}
+              </p>
+            )}
+          </div>
+        </div>
+      );
+    }
+  }
+
   const totalPhotosCount = fullPhotos?.length || (gallery as any)?.photos_count || (gallery as any)?.total_photos || 0;
 
   // ── DYNAMIC DESIGN CONFIGURATION (PRESETS, PALETTE, FONTS, MOTION, LAYOUT) ──
@@ -1485,10 +1596,12 @@ function GuestSlugGalleryContent() {
     subtextColor: '#71717A',
     cardBg: '#FFFFFF',
   };
-  const layoutConfig = designConfig?.layout || {
-    style: 'masonry',
-    gap: 12,
-    cornerRadius: 12,
+  const rawLayout = designConfig?.layout;
+  const layoutConfig = {
+    // Style is 'justified' by default for True Justified Layout preserving natural photo proportions
+    style: (isSelectionMode || !rawLayout?.style || rawLayout.style === 'masonry') ? 'justified' : rawLayout.style,
+    gap: rawLayout?.gap ?? 12,
+    cornerRadius: rawLayout?.cornerRadius ?? 12,
   };
   const headingFont = designConfig?.typography?.headingFont || "'Playfair Display', 'Cormorant Garamond', Georgia, serif";
   const bodyFont = designConfig?.typography?.bodyFont || "'Plus Jakarta Sans', sans-serif";
@@ -1607,7 +1720,7 @@ function GuestSlugGalleryContent() {
                 className="text-sm text-zinc-600 max-w-lg mx-auto leading-relaxed"
                 style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: '1.05rem' }}
               >
-                We will notify you via Email as soon as your photos are ready.
+                We will notify you via WhatsApp & Email as soon as your photos are ready.
               </p>
             </div>
 
@@ -1618,7 +1731,7 @@ function GuestSlugGalleryContent() {
                 <span>Instant Notification Guaranteed</span>
               </div>
               <p className="text-xs text-zinc-600 leading-relaxed font-medium">
-                As soon as the photos are published by the studio, you will receive an instant email notification with your private AI-matched photo collection directly at:
+                As soon as the photos are published by the studio, you will receive an instant notification with your private AI-matched photo collection directly at:
               </p>
               <div className="flex flex-wrap items-center gap-2 pt-1">
                 {guestEmail && (
@@ -1693,26 +1806,33 @@ function GuestSlugGalleryContent() {
   }
 
   // Guest Landing Flow: Cover photo with aesthetic couple name, date, and frosted glass "Find My Photos" pill
-  const isGuestPreRegistration = !isPrivilegedMode && !hasSearched && !isVerified;
+  const isGuestPreRegistration = !isPrivilegedMode && !hasSearched && !isVerified && !guestIdParam && !isResolvingGuest;
 
   const renderHeroAction = () => {
     if (isGuestPreRegistration) {
       return (
-        <div className="pt-4 sm:pt-6 animate-in fade-in zoom-in-95 duration-500">
-          <button
-            type="button"
-            onClick={handleFindMyPhotoClick}
-            className="group relative inline-flex items-center justify-center gap-2.5 sm:gap-3 px-8 sm:px-10 py-3.5 sm:py-4 rounded-full text-white font-bold text-xs sm:text-sm tracking-wider shadow-2xl transition-all duration-300 hover:scale-[1.03] active:scale-[0.97] cursor-pointer backdrop-blur-xl border border-white/30"
-            style={{
-              backgroundColor: designPalette.accentColor,
-            }}
-          >
-            <Camera className="w-4 h-4 sm:w-5 sm:h-5 text-white group-hover:scale-110 transition-transform" />
-            <span style={{ fontFamily: "'Cinzel', 'Playfair Display', serif", letterSpacing: '0.08em' }}>
-              {gallery.is_face_ai_enabled === false ? 'View Event Photos' : 'Find My Photos'}
-            </span>
-            <FaceAiFocusIcon className="w-4 h-4 text-white" />
-          </button>
+        <div className="pt-4 sm:pt-6 space-y-2.5 animate-in fade-in zoom-in-95 duration-500">
+          <div>
+            <button
+              type="button"
+              onClick={handleFindMyPhotoClick}
+              className="group relative inline-flex items-center justify-center gap-2.5 sm:gap-3 px-8 sm:px-10 py-3.5 sm:py-4 rounded-full text-white font-bold text-xs sm:text-sm tracking-wider shadow-2xl transition-all duration-300 hover:scale-[1.03] active:scale-[0.97] cursor-pointer backdrop-blur-xl border border-white/30"
+              style={{
+                backgroundColor: designPalette.accentColor,
+              }}
+            >
+              <Camera className="w-4 h-4 sm:w-5 sm:h-5 text-white group-hover:scale-110 transition-transform" />
+              <span style={{ fontFamily: "'Cinzel', 'Playfair Display', serif", letterSpacing: '0.08em' }}>
+                {currentGalleryStatus === 'UNPUBLISHED' ? 'Register Selfie for Live Alerts' : (gallery.is_face_ai_enabled === false ? 'View Event Photos' : 'Find My Photos')}
+              </span>
+              <FaceAiFocusIcon className="w-4 h-4 text-white" />
+            </button>
+          </div>
+          {currentGalleryStatus === 'UNPUBLISHED' && (
+            <p className="text-[11px] sm:text-xs text-white/80 max-w-md mx-auto drop-shadow-md font-sans">
+              ✨ Pre-register your selfie now to get notified via WhatsApp & Email when photos go live!
+            </p>
+          )}
         </div>
       );
     }
@@ -2753,7 +2873,10 @@ function GuestSlugGalleryContent() {
                   <JustifiedGalleryLayout
                     photos={displayedPhotos}
                     layoutConfig={layoutConfig}
-                    onPhotoClick={(photo, idx) => setSelectedPhotoIndex(idx)}
+                    onPhotoClick={(photo, idx) => {
+                      const fullIdx = activeFullPhotos.findIndex((p) => p.id === photo.id);
+                      setSelectedPhotoIndex(fullIdx >= 0 ? fullIdx : idx);
+                    }}
                     onDownloadPhoto={handleDownloadPhoto}
                   />
                 </>
@@ -2821,7 +2944,8 @@ function GuestSlugGalleryContent() {
               onRequestSelectorModal={() => setShowSelectorModal(true)}
               onPhotoClick={(photo, idx) => {
                 // Clicking on photo card ALWAYS opens the high-resolution lightbox viewer
-                setSelectedPhotoIndex(idx);
+                const fullIdx = activeFullPhotos.findIndex((p) => p.id === photo.id);
+                setSelectedPhotoIndex(fullIdx >= 0 ? fullIdx : idx);
               }}
               onToggleSelect={(photo) => handleTogglePhotoSelection(photo.id)}
               onDownloadPhoto={handleDownloadPhoto}
@@ -2858,7 +2982,7 @@ function GuestSlugGalleryContent() {
 
       {/* 4. PIN UNLOCK MODAL */}
       {showPinModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[110000] bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-sm w-full border border-zinc-200 shadow-2xl space-y-4 animate-in fade-in">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -2909,7 +3033,7 @@ function GuestSlugGalleryContent() {
 
       {/* 5. CLIENT SELECTION IDENTITY MODAL (NAME & EMAIL) */}
       {showSelectorModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[110000] bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-sm w-full border border-zinc-200 shadow-2xl space-y-5 animate-in fade-in zoom-in-95">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -3088,7 +3212,7 @@ function GuestSlugGalleryContent() {
 
       {/* SUBMIT SELECTION CONFIRMATION MODAL */}
       {showSubmitConfirmModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[110000] bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full border border-zinc-200 shadow-2xl space-y-5 animate-in fade-in zoom-in-95">
             <div className="w-14 h-14 rounded-2xl bg-rose-50 text-rose-600 border border-rose-200 flex items-center justify-center mx-auto shadow-inner">
               <Send className="w-7 h-7 text-rose-600" />
@@ -3345,15 +3469,15 @@ function GuestSlugGalleryContent() {
       )}
 
       {/* 6. PREMAGIC / FOTOOWL TOUCH-SWIPE LIGHTBOX WITH SMART HD ZOOM */}
-      {selectedPhotoIndex !== null && displayedPhotos[selectedPhotoIndex] && (
+      {selectedPhotoIndex !== null && activeFullPhotos[selectedPhotoIndex] && (
         <PremagicLightbox
-          photos={displayedPhotos}
+          photos={activeFullPhotos}
           currentIndex={selectedPhotoIndex}
           onClose={() => setSelectedPhotoIndex(null)}
           onNavigate={(idx) => setSelectedPhotoIndex(idx)}
           onDownload={handleDownloadPhoto as any}
           onToggleSelect={isSelectionMode ? handleTogglePhotoSelection : undefined}
-          isSelected={selectedForAlbum.has(displayedPhotos[selectedPhotoIndex]?.id)}
+          isSelected={selectedForAlbum.has(activeFullPhotos[selectedPhotoIndex]?.id)}
           isSelectionMode={isSelectionMode}
           isSelectionSubmitted={isSelectionSubmitted}
           allowDownloads={gallery.allow_downloads ?? true}

@@ -159,6 +159,10 @@ export async function POST(req: NextRequest) {
     for (const entry of entries) {
       const changes = entry.changes || [];
       for (const change of changes) {
+        if (performance.now() - startTime > 12000) {
+          console.warn('[Meta Webhook Circuit Breaker] Exceeded 12s budget, returning 200 OK to prevent Cloudflare 524');
+          break;
+        }
         if (change.field === 'leadgen' && change.value) {
           const { leadgen_id, form_id, page_id, created_time } = change.value;
 

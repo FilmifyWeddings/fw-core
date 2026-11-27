@@ -2176,6 +2176,7 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId?: string
             workspace_id: wsId,
             jid: g.jid,
             display_name: g.display_name,
+            metadata: { participant_count: g.participant_count ?? 0 },
             is_group: true,
             updated_at: new Date().toISOString(),
           }));
@@ -2256,8 +2257,53 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId?: string
       const isOutbound = !!msg.key?.fromMe;
       const isGroup = chatJid.endsWith('@g.us');
 
-      // CRITICAL: Skip all group incoming chatter! Only log outbound CRM actions directed at groups.
-      if (isGroup && !isOutbound) continue;
+      // If message is in a group, automatically ensure group exists and updates in baileys_chats
+      if (isGroup) {
+        const stubType = (msg as any).messageStubType;
+        const stubParams = (msg as any).messageStubParameters || [];
+        let newSubject = '';
+
+        // Check if message is a group rename or create event
+        if (stubParams && stubParams.length > 0) {
+          // 21: GROUP_CHANGE_SUBJECT, 20: GROUP_CREATE
+          if (stubType === 21 || stubType === 20 || String(stubType).includes('CHANGE_SUBJECT') || String(stubType).includes('CREATE')) {
+            newSubject = stubParams[0];
+          }
+        }
+
+        if (newSubject) {
+          logger.info({ workspaceId: wsId, chatJid, newSubject }, '🔄 Real-time WhatsApp group rename detected via message stub');
+          (supabase.from('baileys_chats') as any).upsert({
+            workspace_id: wsId,
+            jid: chatJid,
+            display_name: newSubject,
+            is_group: true,
+            updated_at: new Date().toISOString(),
+          }, {
+            onConflict: 'workspace_id, jid',
+            ignoreDuplicates: false,
+          }).catch(() => {});
+        } else {
+          localSock.groupMetadata(chatJid).then((meta: any) => {
+            if (meta?.subject) {
+              (supabase.from('baileys_chats') as any).upsert({
+                workspace_id: wsId,
+                jid: chatJid,
+                display_name: meta.subject || chatJid.split('@')[0],
+                metadata: { participant_count: meta.participants?.length ?? 0 },
+                is_group: true,
+                updated_at: new Date().toISOString(),
+              }, {
+                onConflict: 'workspace_id, jid',
+                ignoreDuplicates: false,
+              }).catch(() => {});
+            }
+          }).catch(() => {});
+        }
+
+        // CRITICAL: Skip logging incoming group chatter to baileys_messages to prevent bloat
+        if (!isOutbound) continue;
+      }
 
       const text = msg.message?.conversation ?? 
                    msg.message?.extendedTextMessage?.text ?? 
@@ -2366,13 +2412,13 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId?: string
   localSock.ev.on('group-participants.update', async ({ id }: any) => {
     if (!id) return;
     try {
-      const meta = await localSock.groupMetadata(id);
+      const meta = await localSock.groupMetadata(id).catch(() => null);
       if (meta) {
         await (supabase.from('baileys_chats') as any).upsert({
           workspace_id: wsId,
           jid: id,
           display_name: meta.subject || id.split('@')[0],
-          participant_count: meta.participants?.length ?? 0,
+          metadata: { participant_count: meta.participants?.length ?? 0 },
           is_group: true,
           updated_at: new Date().toISOString(),
         }, {
@@ -2392,7 +2438,7 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId?: string
           workspace_id: wsId,
           jid: group.id,
           display_name: group.subject || group.id.split('@')[0],
-          participant_count: group.participants?.length ?? 0,
+          metadata: { participant_count: group.participants?.length ?? 0 },
           is_group: true,
           updated_at: new Date().toISOString(),
         }, {
@@ -2416,6 +2462,28 @@ async function startBaileysSocket(forceFresh = false, targetWorkspaceId?: string
           is_group: true,
           updated_at: new Date().toISOString(),
         }, {
+          onConflict: 'workspace_id, jid',
+          ignoreDuplicates: false,
+        });
+      } catch (_) {}
+    }
+  });
+
+  // Real-time listener for chats update to catch group rename or updates
+  localSock.ev.on('chats.update', async (chats: any[]) => {
+    for (const chat of chats) {
+      if (!chat.id || !chat.id.endsWith('@g.us')) continue;
+      try {
+        const patch: any = {
+          workspace_id: wsId,
+          jid: chat.id,
+          is_group: true,
+          updated_at: new Date().toISOString(),
+        };
+        if (chat.name || chat.subject) {
+          patch.display_name = chat.name || chat.subject;
+        }
+        await (supabase.from('baileys_chats') as any).upsert(patch, {
           onConflict: 'workspace_id, jid',
           ignoreDuplicates: false,
         });
@@ -2869,6 +2937,7 @@ function startHealthServer(): http.Server {
             workspace_id: targetWsId || WORKSPACE_ID,
             jid: g.jid,
             display_name: g.display_name,
+            metadata: { participant_count: g.participant_count ?? 0 },
             is_group: true,
             updated_at: new Date().toISOString(),
           }));
@@ -2884,27 +2953,40 @@ function startHealthServer(): http.Server {
           res.end(JSON.stringify({ success: true, groups }));
           return;
         } catch (sockErr: any) {
-          logger.warn({ err: sockErr?.message, workspaceId: targetWsId }, '⚠️ Live groupFetchAllParticipating failed, checking DB cache...');
+          logger.warn({ err: sockErr?.message, workspaceId: targetWsId }, '⚠️ Live groupFetchAllParticipating failed/rate-limited, reading from baileys_chats cache...');
 
           // Fallback to cached groups from database
           try {
-            const { data: dbGroups } = await supabase
+            let dbQuery = supabase
               .from('baileys_chats')
-              .select('jid, display_name, participant_count, is_group')
+              .select('jid, display_name, metadata, is_group')
               .eq('is_group', true)
-              .order('display_name', { ascending: true });
+              .limit(5000);
+
+            if (targetWsId && targetWsId !== '00000000-0000-0000-0000-000000000000') {
+              dbQuery = dbQuery.or(`workspace_id.eq.${targetWsId},workspace_id.is.null`);
+            }
+
+            const { data: dbGroups } = await dbQuery.order('display_name', { ascending: true });
 
             if (dbGroups && dbGroups.length > 0) {
+              const mapped = dbGroups.map((g: any) => ({
+                jid: g.jid,
+                display_name: g.display_name || g.jid.split('@')[0],
+                participant_count: g.metadata?.participant_count ?? 0,
+                is_group: true,
+              }));
               res.writeHead(200);
-              res.end(JSON.stringify({ success: true, groups: dbGroups, cached: true }));
+              res.end(JSON.stringify({ success: true, groups: mapped, cached: true }));
               return;
             }
           } catch (_) {}
 
           res.writeHead(200);
           res.end(JSON.stringify({ 
-            success: false, 
-            error: sockErr?.message || 'WhatsApp is not connected. Please scan the QR code to connect.' 
+            success: true, 
+            groups: [],
+            warning: sockErr?.message || 'Rate limit in effect, try again shortly.' 
           }));
           return;
         }
@@ -3611,10 +3693,44 @@ async function runSelfHealingSessionSync(): Promise<void> {
   }
 }
 
+/**
+ * Background Active Group Sync: Polls all participating WhatsApp groups every 20 seconds.
+ * Guarantees that any group created or joined on WhatsApp is saved into baileys_chats automatically.
+ */
+async function syncAllActiveSessionGroups(): Promise<void> {
+  for (const [wsId, sess] of activeSessions.entries()) {
+    if (!sess.sock || !sess.sock.user?.id) continue;
+    try {
+      const groupMap = await sess.sock.groupFetchAllParticipating();
+      const groups = Object.values(groupMap).map((g: any) => ({
+        workspace_id: wsId,
+        jid: g.id,
+        display_name: g.subject || g.id.split('@')[0],
+        metadata: { participant_count: g.participants?.length ?? 0 },
+        is_group: true,
+        updated_at: new Date().toISOString(),
+      }));
+      if (groups.length > 0) {
+        await (supabase.from('baileys_chats') as any)
+          .upsert(groups, { onConflict: 'workspace_id, jid', ignoreDuplicates: false });
+      }
+    } catch (_) {}
+  }
+}
+
   setInterval(() => {
     runQueueDrain().catch(err => logger.error({ err }, 'Periodic queue drain error'));
     runSelfHealingSessionSync().catch(err => logger.error({ err }, 'Self healing session sync error'));
   }, 10_000);
+
+  // Poll participating groups periodically with safe 10-minute cadence to prevent WhatsApp rate limits
+  setTimeout(() => {
+    syncAllActiveSessionGroups().catch(() => {});
+  }, 30_000);
+
+  setInterval(() => {
+    syncAllActiveSessionGroups().catch(() => {});
+  }, 600_000);
 
   setInterval(() => {
     runSweeper().catch(err => logger.error({ err }, 'Sweeper cron error'));

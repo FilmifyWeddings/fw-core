@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { getGalleryPresignedDownloadUrl } from '@/lib/storage/galleryB2Client';
 import { extractFacesFromS3Key, extractFacesBatchFromS3Keys, cosineSimilarity, normalizeVector } from '@/lib/faceAI';
+import { incrementWorkspaceStorage } from '@/lib/storage/galleryStorageQuota';
 
 export const dynamic = 'force-dynamic';
 
@@ -55,15 +56,106 @@ export async function POST(req: NextRequest) {
       } catch (_) {}
     }
 
-    // 2. Insert photos into gallery_photos
-    const { data: inserted, error: insertError } = await supabaseAdmin
+    const isValidUuid = (val: any): boolean => {
+      if (!val || typeof val !== 'string') return false;
+      return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val.trim());
+    };
+
+    // Auto-resolve default collection ID for this gallery if collection_id / folder_id is missing or 'default'
+    let defaultColId: string | null = null;
+    try {
+      const { data: cols } = await supabaseAdmin
+        .from('gallery_collections')
+        .select('id')
+        .eq('gallery_id', galleryId)
+        .order('created_at', { ascending: true })
+        .limit(1);
+
+      if (cols && cols.length > 0) {
+        defaultColId = cols[0].id;
+      } else {
+        const { data: newCol } = await supabaseAdmin
+          .from('gallery_collections')
+          .insert({ gallery_id: galleryId, name: 'Highlights', slug: 'highlights' })
+          .select('id')
+          .maybeSingle();
+        if (newCol) defaultColId = newCol.id;
+      }
+    } catch (_) {}
+
+    // 2. Normalize and insert photos into gallery_photos
+    const normalizedPhotos = photos.map((p: any) => {
+      const colId = isValidUuid(p.collection_id)
+        ? p.collection_id
+        : (isValidUuid(p.folder_id) ? p.folder_id : defaultColId);
+
+      const folId = isValidUuid(p.folder_id)
+        ? p.folder_id
+        : (isValidUuid(p.collection_id) ? p.collection_id : defaultColId);
+
+      const targetPreview = p.preview_key || p.preview_url || '';
+      const targetThumb = p.thumb_key || p.thumbnail_key || targetPreview;
+      const targetOriginal = p.original_key || targetPreview;
+
+      return {
+        gallery_id: galleryId,
+        collection_id: colId,
+        folder_id: folId,
+        preview_key: targetPreview,
+        thumbnail_key: targetThumb,
+        thumb_key: targetThumb,
+        original_key: targetOriginal,
+        width: p.width,
+        height: p.height,
+        size_bytes: Number(p.size_bytes) || 0,
+        face_count: p.face_count || 0,
+      };
+    });
+
+    let inserted: any[] | null = null;
+    let { data: insertedData, error: insertError } = await supabaseAdmin
       .from('gallery_photos')
-      .insert(photos)
+      .insert(normalizedPhotos)
       .select('*');
 
     if (insertError) {
-      console.error('Error inserting photos:', insertError);
-      return NextResponse.json({ success: false, error: insertError.message }, { status: 500 });
+      console.warn('[GalleryRegister] Initial insert notice (retrying without folder_id/thumb_key):', insertError.message);
+      // Fallback in case folder_id or thumb_key columns are not yet migrated
+      const fallbackPhotos = normalizedPhotos.map((p) => ({
+        gallery_id: p.gallery_id,
+        collection_id: p.collection_id,
+        preview_key: p.preview_key,
+        thumbnail_key: p.thumbnail_key,
+        original_key: p.original_key,
+        width: p.width,
+        height: p.height,
+        size_bytes: p.size_bytes,
+        face_count: p.face_count,
+      }));
+
+      const fallbackRes = await supabaseAdmin
+        .from('gallery_photos')
+        .insert(fallbackPhotos)
+        .select('*');
+
+      if (fallbackRes.error) {
+        console.error('Error inserting photos:', fallbackRes.error);
+        return NextResponse.json({ success: false, error: fallbackRes.error.message }, { status: 500 });
+      }
+      inserted = fallbackRes.data;
+    } else {
+      inserted = insertedData;
+    }
+
+    // 2B. Accurately update storage used bytes for workspace
+    const totalBytesAdded = (inserted || []).reduce(
+      (sum: number, p: any) => sum + (Number(p.size_bytes) || 0),
+      0
+    );
+    if (totalBytesAdded > 0 && workspaceId && workspaceId !== '00000000-0000-0000-0000-000000000000') {
+      incrementWorkspaceStorage(workspaceId, galleryId, totalBytesAdded).catch((e) =>
+        console.warn('[GalleryRegister] Storage quota increment notice:', e)
+      );
     }
 
     // 3. Set immortal cover_url on event_galleries if it does not have one
@@ -171,7 +263,7 @@ export async function POST(req: NextRequest) {
 
                   if (nfEmb && nfEmb.length === 512) {
                     const sim = cosineSimilarity(guestVector, nfEmb);
-                    if (sim >= 0.48) {
+                    if (sim >= 0.40) {
                       currentMatches.add(nf.photo_id);
                       hasNewMatch = true;
                     }

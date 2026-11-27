@@ -13,6 +13,7 @@ import {
   MapPin, CheckCheck, UserCheck, UserPlus, Upload, RotateCcw
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { authFetchJson } from '@/lib/client-auth-fetch';
 import { extractFinancialsFromQuotation, normalizeToIsoDate } from '@/lib/quotation-finance-sync';
 import { parseClientExtended, serializeClientExtended } from '@/components/clients/client-insider-modal';
 import { LeadQuotationModal } from '@/components/dashboard/lead-quotation-modal';
@@ -69,13 +70,29 @@ let memCachedFinanceClients: WorkspaceClient[] = [];
 
 export default function FinancePage() {
   const { workspaceMembers } = useWorkspaceData();
-  const { userName, isOwner, userEmail, workspaceId, permissions } = useWorkspace();
+  const { userName, isOwner, userEmail, workspaceId, permissions, isReady } = useWorkspace();
 
   const financeAccess = isOwner ? 'MANAGE' : (permissions?.finance_access || 'NONE');
   const isReadOnly = !isOwner && (financeAccess === 'VIEW' || financeAccess === 'VIEW_ONLY');
 
   const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string>(workspaceId || '');
-  const activeWsId = workspaceId || currentWorkspaceId;
+  const activeWsId = workspaceId || currentWorkspaceId || (typeof window !== 'undefined' ? (localStorage.getItem('sc_active_workspace_id') || '') : '');
+
+  useEffect(() => {
+    if (workspaceId) {
+      setCurrentWorkspaceId(workspaceId);
+    }
+  }, [workspaceId]);
+
+  const resolveFinanceWsId = async (): Promise<string> => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const stored = typeof window !== 'undefined' ? localStorage.getItem('sc_active_workspace_id') : null;
+      return String(workspaceId || activeWsId || stored || session?.user?.id || 'ws_demo');
+    } catch {
+      return String(workspaceId || activeWsId || 'ws_demo');
+    }
+  };
 
   // 👥 Filter ONLY Studio Owner + team members who have Finance Access strictly for the active studio
   const financeTeamMembers = useMemo(() => {
@@ -203,44 +220,21 @@ export default function FinancePage() {
     try {
       const nowIso = new Date().toISOString();
       const clientId = record.client_id;
-      const { data: { session } } = await supabase.auth.getSession();
-      const workspaceId = session?.user?.id || currentWorkspaceId || 'ws_demo';
-
-      if (workspaceId !== 'ws_demo') {
-        const cleanNotes = (record.notes || '').replace(/\[status:trash\]/g, '').trim();
-        await supabase
-          .from('client_finance_records')
-          .update({
-            status: 'active',
-            is_deleted: false,
-            deleted_at: null,
-            notes: cleanNotes,
-            updated_at: nowIso
-          })
-          .eq('id', record.id);
-
-        if (clientId) {
-          const { data: cl } = await supabase
-            .from('workspace_clients')
-            .select('notes')
-            .eq('id', clientId)
-            .maybeSingle();
-
-          const clCleanNotes = (cl?.notes || '').replace(/\[status:trash\]/g, '').trim();
-          await supabase
-            .from('workspace_clients')
-            .update({
-              status: 'active',
-              is_deleted: false,
-              deleted_at: null,
-              notes: clCleanNotes,
-              updated_at: nowIso
-            })
-            .eq('id', clientId);
-        }
-      }
-
+      const resolvedWsId = await resolveFinanceWsId();
       const cleanNotes = (record.notes || '').replace(/\[status:trash\]/g, '').trim();
+
+      if (resolvedWsId !== 'ws_demo') {
+        await authFetchJson('/api/workspace/finance', {
+          method: 'POST',
+          body: JSON.stringify({
+            action: 'restore',
+            workspace_id: resolvedWsId,
+            recordId: record.id,
+            clientId,
+            notes: cleanNotes,
+          }),
+        });
+      }
 
       setFinanceRecords(prev => prev.map(r => (r.id === record.id || (clientId && r.client_id === clientId)) ? {
         ...r,
@@ -642,8 +636,7 @@ export default function FinancePage() {
     async function initSecurityAndSession() {
       setIsCheckingPinStatus(true);
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const wsId = workspaceId || session?.user?.id || 'ws_demo';
+        const wsId = await resolveFinanceWsId();
         if (!isCancelled) {
           setCurrentWorkspaceId(wsId);
         }
@@ -708,13 +701,14 @@ export default function FinancePage() {
     return () => {
       isCancelled = true;
     };
-  }, []);
+  }, [workspaceId]);
 
   // ─────────────────────────────────────────────────────────────
   // 📥 GUARDED DATA FETCH: ONLY DOWNLOADS WHEN PIN IS 100% VERIFIED
   // ─────────────────────────────────────────────────────────────
   useEffect(() => {
     if (isCheckingPinStatus || !isPinVerified || !currentWorkspaceId) return;
+    if (!isReady && !activeWsId) return;
 
     fetchFinanceData();
 
@@ -737,6 +731,8 @@ export default function FinancePage() {
     window.addEventListener('client_created', handleQuotationFinalized);
     window.addEventListener('client_updated', handleQuotationFinalized);
     window.addEventListener('team_events_updated', handleQuotationFinalized);
+    window.addEventListener('sc_session_refreshed', handleExpensesUpdated);
+    window.addEventListener('sc_workspace_switched', handleQuotationFinalized);
 
     const handleStorage = (e: StorageEvent) => {
       if (e.key === 'sc_booking_sync_event' || e.key === 'finance_updated' || e.key === 'sc_cached_finance_records' || e.key === 'client_created') {
@@ -753,6 +749,8 @@ export default function FinancePage() {
       window.removeEventListener('client_created', handleQuotationFinalized);
       window.removeEventListener('client_updated', handleQuotationFinalized);
       window.removeEventListener('team_events_updated', handleQuotationFinalized);
+      window.removeEventListener('sc_session_refreshed', handleExpensesUpdated);
+      window.removeEventListener('sc_workspace_switched', handleQuotationFinalized);
       window.removeEventListener('storage', handleStorage);
     };
   }, [isPinVerified, isCheckingPinStatus, currentWorkspaceId]);
@@ -772,230 +770,137 @@ export default function FinancePage() {
       setLoading(true);
     }
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const workspaceId: string = String(activeWsId || session?.user?.id || 'ws_demo');
-      if (!currentWorkspaceId) {
+      const workspaceId = await resolveFinanceWsId();
+      if (!currentWorkspaceId && workspaceId !== 'ws_demo') {
         setCurrentWorkspaceId(workspaceId);
       }
-
-      // 1. Fetch Clients (Fetch all active workspace clients up to 1000 records)
-      let clientQuery = supabase
-        .from('workspace_clients')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(1000);
-
-      if (workspaceId && workspaceId !== 'ws_demo') {
-        clientQuery = clientQuery.or(`user_id.eq.${workspaceId},workspace_id.eq.${workspaceId}`);
+      if (!workspaceId || workspaceId === 'ws_demo') {
+        setLoading(false);
+        return;
       }
 
-      const { data: clientData } = await clientQuery;
-      let clientList = clientData ? [...clientData] : [];
+      const apiData = await authFetchJson(`/api/workspace/finance?workspace_id=${encodeURIComponent(workspaceId)}&fresh=1`);
+      const clientList: WorkspaceClient[] = Array.isArray(apiData.clients) ? [...apiData.clients] : [];
 
-      // Also fetch leads that have final_quotation_id or booked/accepted status to guarantee immediate card appearance
-      try {
-        let leadsQuery = supabase
-          .from('leads')
-          .select('*')
-          .or('final_quotation_id.not.is.null,status.in.(booked,accepted,closed,converted,trash,trashed)')
-          .order('created_at', { ascending: false })
-          .limit(1000);
-
-        if (workspaceId && workspaceId !== 'ws_demo') {
-          leadsQuery = leadsQuery.or(`workspace_id.eq.${workspaceId},created_by_user_id.eq.${workspaceId}`);
+      const leadsData: any[] = Array.isArray(apiData.leads) ? apiData.leads : [];
+      for (const lead of leadsData) {
+        const coupleName = lead.raw_payload?.couple_name || lead.couple_names || lead.client_name || lead.name || 'Untitled Client';
+        const matchedClient = clientList.find(c => {
+          const cleanLeadName = coupleName.toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ').trim();
+          const cleanCName = (c.name || '').toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ').trim();
+          return (
+            c.id === lead.id ||
+            c.lead_id === lead.id ||
+            Boolean(lead.client_id && (c.id === lead.client_id || c.lead_id === lead.client_id)) ||
+            Boolean(lead.raw_payload?.client_id && c.id === lead.raw_payload.client_id) ||
+            Boolean((c as any).final_quotation_id && lead.final_quotation_id && (c as any).final_quotation_id === lead.final_quotation_id) ||
+            Boolean(cleanLeadName && cleanCName && cleanLeadName === cleanCName)
+          );
+        });
+        if (matchedClient) {
+          if (lead.final_quotation_id) (matchedClient as any).final_quotation_id = lead.final_quotation_id;
+          if (!matchedClient.lead_id) matchedClient.lead_id = lead.id;
+        } else {
+          clientList.push({
+            id: lead.id,
+            lead_id: lead.id,
+            name: coupleName,
+            phone: lead.phone,
+            email: lead.email,
+            event_date: lead.event_date || lead.created_at,
+            event_type: lead.event_type || 'Wedding',
+            status: lead.status || 'booked',
+            created_at: lead.created_at,
+            notes: lead.notes,
+            final_quotation_id: lead.final_quotation_id,
+            total_package_amount: lead.raw_payload?.total_amount || 0,
+            paid_amount: 0
+          } as any);
         }
-
-        const { data: leadsData } = await leadsQuery;
-        if (leadsData) {
-          for (const lead of leadsData) {
-            const coupleName = lead.raw_payload?.couple_name || (lead as any).couple_names || lead.client_name || lead.name || 'Untitled Client';
-            const matchedClient = clientList.find(c => {
-              const cleanLeadName = coupleName.toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ').trim();
-              const cleanCName = (c.name || '').toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ').trim();
-              return (
-                c.id === lead.id || 
-                c.lead_id === lead.id || 
-                Boolean(lead.client_id && (c.id === lead.client_id || c.lead_id === lead.client_id)) ||
-                Boolean(lead.raw_payload?.client_id && c.id === lead.raw_payload.client_id) ||
-                Boolean(c.final_quotation_id && lead.final_quotation_id && c.final_quotation_id === lead.final_quotation_id) ||
-                Boolean(cleanLeadName && cleanCName && cleanLeadName === cleanCName)
-              );
-            });
-            if (matchedClient) {
-              if (lead.final_quotation_id) {
-                matchedClient.final_quotation_id = lead.final_quotation_id;
-              }
-              if (!matchedClient.lead_id) {
-                matchedClient.lead_id = lead.id;
-              }
-            } else {
-              clientList.push({
-                id: lead.id,
-                lead_id: lead.id,
-                name: coupleName,
-                phone: lead.phone,
-                email: lead.email,
-                event_date: lead.event_date || lead.created_at,
-                event_type: lead.event_type || 'Wedding',
-                status: lead.status || 'booked',
-                created_at: lead.created_at,
-                notes: lead.notes,
-                final_quotation_id: lead.final_quotation_id,
-                total_package_amount: lead.raw_payload?.total_amount || 0,
-                paid_amount: 0
-              } as any);
-            }
-          }
-        }
-      } catch (leadErr) {
-        console.warn('Error fetching booked leads for finance fallback:', leadErr);
       }
 
-      // 2. Fetch Client Finance Records
-      let financeQuery = supabase
-        .from('client_finance_records')
-        .select('*')
-        .order('created_at', { ascending: false });
+      clientList.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
 
-      if (workspaceId && workspaceId !== 'ws_demo') {
-        financeQuery = financeQuery.or(`user_id.eq.${workspaceId},workspace_id.eq.${workspaceId}`);
-      }
-
-      const { data: financeData } = await financeQuery;
+      const financeData: ClientFinanceRecord[] = Array.isArray(apiData.financeRecords) ? apiData.financeRecords : [];
       const financeMap = new Map<string, ClientFinanceRecord>();
-      if (financeData) {
-        financeData.forEach(f => {
+      financeData.forEach(f => {
+        const existingF = financeMap.get(f.client_id);
+        if (!existingF || Number(f.final_total_amount || 0) > Number(existingF.final_total_amount || 0)) {
           financeMap.set(f.client_id, f);
+        }
+      });
+
+      const memberSet = new Set<string>();
+      if (userName && !isPlaceholderName(userName)) memberSet.add(userName.trim());
+      financeTeamMembers.forEach(m => {
+        if (m.name && !isPlaceholderName(m.name)) memberSet.add(m.name.trim());
+      });
+      if (Array.isArray(apiData.teamMembers)) {
+        apiData.teamMembers.forEach((m: any) => {
+          if (m.name && !isPlaceholderName(m.name)) memberSet.add(String(m.name).trim());
         });
       }
-
-      // 3. Fetch Team Members & Finance Milestone Settings
-      try {
-        const memberSet = new Set<string>();
-        if (userName && !isPlaceholderName(userName)) {
-          memberSet.add(userName.trim());
+      clientList.forEach(c => {
+        let handled = (c as any).handled_by || (c as any).assigned_team_member_name;
+        if (!handled && (c as any).custom_data?.handled_by) handled = (c as any).custom_data.handled_by;
+        if (!handled && c.notes && typeof c.notes === 'string') {
+          const match = c.notes.match(/handled_by:\s*([^\n\r,]+)/i);
+          if (match && match[1]) handled = match[1].trim();
         }
-        financeTeamMembers.forEach(m => {
-          if (m.name && !isPlaceholderName(m.name)) {
-            memberSet.add(m.name.trim());
-          }
+        if (handled && typeof handled === 'string' && handled.trim() && !isPlaceholderName(handled)) {
+          memberSet.add(handled.trim());
+        }
+      });
+      setTeamMembersList(Array.from(memberSet));
+
+      const templateSet = new Set<string>(['Token Amount', 'Advance Amount', 'On Wedding Day']);
+      if (apiData.financeSettings?.payment_milestone_templates && Array.isArray(apiData.financeSettings.payment_milestone_templates)) {
+        apiData.financeSettings.payment_milestone_templates.forEach((t: string) => {
+          if (t && typeof t === 'string' && t.trim()) templateSet.add(t.trim());
         });
-
-        // Add any non-placeholder handled_by already assigned to clients
-        clientList.forEach(c => {
-          let handled = (c as any).handled_by || (c as any).assigned_team_member_name;
-          if (!handled && (c as any).custom_data?.handled_by) handled = (c as any).custom_data.handled_by;
-          if (!handled && c.notes && typeof c.notes === 'string') {
-            const match = c.notes.match(/handled_by:\s*([^\n\r,]+)/i);
-            if (match && match[1]) handled = match[1].trim();
-          }
-          if (handled && typeof handled === 'string' && handled.trim() && !isPlaceholderName(handled)) {
-            memberSet.add(handled.trim());
-          }
-        });
-
-        setTeamMembersList(Array.from(memberSet));
-
-        // D. Fetch Payment Milestone Templates from workspace_finance_settings or localStorage
-        const templateSet = new Set<string>(['Token Amount', 'Advance Amount', 'On Wedding Day']);
+      } else if (typeof window !== 'undefined') {
         try {
-          const { data: finSettings } = await supabase
-            .from('workspace_finance_settings')
-            .select('*')
-            .eq('user_id', workspaceId)
-            .maybeSingle();
-
-          if (finSettings?.payment_milestone_templates && Array.isArray(finSettings.payment_milestone_templates)) {
-            finSettings.payment_milestone_templates.forEach((t: string) => {
-              if (t && typeof t === 'string' && t.trim()) templateSet.add(t.trim());
-            });
-          } else {
-            const savedLocal = typeof window !== 'undefined' ? localStorage.getItem(`fw_milestone_templates_${workspaceId}`) : null;
-            if (savedLocal) {
-              const parsed = JSON.parse(savedLocal);
-              if (Array.isArray(parsed)) parsed.forEach(t => templateSet.add(t));
-            }
+          const savedLocal = localStorage.getItem(`fw_milestone_templates_${workspaceId}`);
+          if (savedLocal) {
+            const parsed = JSON.parse(savedLocal);
+            if (Array.isArray(parsed)) parsed.forEach(t => templateSet.add(t));
           }
         } catch (_) {}
-
-        setPaymentMilestoneTemplates(Array.from(templateSet));
-
-        // E. Fetch Workspace Custom Expense Categories
-        if (workspaceId && workspaceId !== 'ws_demo') {
-          try {
-            const { data: catData } = await supabase
-              .from('workspace_expense_categories')
-              .select('category_name')
-              .eq('workspace_id', workspaceId)
-              .order('created_at', { ascending: true });
-
-            if (catData && catData.length > 0) {
-              const customCats = catData.map(c => c.category_name);
-              setExpenseCategories(Array.from(new Set([...DEFAULT_EXPENSE_CATEGORIES, ...customCats])));
-            }
-          } catch (catErr) {
-            console.warn('Expense categories lookup notice:', catErr);
-          }
-        }
-      } catch (err) {
-        console.warn('Error loading team members or finance settings:', err);
       }
+      setPaymentMilestoneTemplates(Array.from(templateSet));
 
-      // 4. Fetch Quotation Documents
-      const targetLeadIds = clientList.map(c => c.lead_id).filter(Boolean) as string[];
-      const targetClientIds = clientList.map(c => c.id).filter(Boolean) as string[];
-      const allLookupIds = Array.from(new Set([...targetLeadIds, ...targetClientIds])).filter(id => id && typeof id === 'string' && id.trim().length >= 6);
+      if (Array.isArray(apiData.expenseCategories) && apiData.expenseCategories.length > 0) {
+        setExpenseCategories(Array.from(new Set([...DEFAULT_EXPENSE_CATEGORIES, ...apiData.expenseCategories])));
+      }
 
       const quoteDocMap = new Map<string, any>();
       const allLeadQuotesMap = new Map<string, any[]>();
       const leadMap = new Map<string, any>();
+      leadsData.forEach(l => leadMap.set(l.id, l));
 
-      if (allLookupIds.length > 0) {
-        try {
-          const shortFilters = allLookupIds.slice(0, 20).map(id => `template_id.ilike.%${id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8)}%`);
-          const [docsRes, leadsRes] = await Promise.all([
-            supabase
-              .from('quotation_documents')
-              .select('id, template_id, lead_id, version, lead_version, content_json, created_at, updated_at')
-              .or(workspaceId && workspaceId !== 'ws_demo' ? `user_id.eq.${workspaceId},workspace_id.eq.${workspaceId}` : `lead_id.in.(${targetLeadIds.filter(id => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)).join(',') || '00000000-0000-0000-0000-000000000000'})`)
-              .order('created_at', { ascending: false }),
-            supabase
-              .from('leads')
-              .select('id, name, final_quotation_id, quotation_id')
-              .in('id', targetLeadIds.filter(id => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)))
-          ]);
-
-          if (leadsRes.data) {
-            leadsRes.data.forEach(l => leadMap.set(l.id, l));
-          }
-
-          const quoteDocs = docsRes.data;
-          if (quoteDocs && quoteDocs.length > 0) {
-            const leadGroups = new Map<string, any[]>();
-            for (const doc of quoteDocs) {
-              const parsed = extractFinancialsFromQuotation(doc.content_json);
-              if (parsed) {
-                quoteDocMap.set(doc.template_id, parsed);
-                if (doc.lead_id) {
-                  const arr = leadGroups.get(doc.lead_id) || [];
-                  arr.push({ 
-                    ...parsed, 
-                    template_id: doc.template_id, 
-                    version: doc.lead_version || doc.version,
-                    is_final: Boolean((doc as any).is_final || doc.content_json?.is_final === true || ['accepted', 'approved', 'finalized'].includes((doc.content_json?.status || '').toLowerCase()))
-                  });
-                  leadGroups.set(doc.lead_id, arr);
-                }
-              }
+      const quoteDocs: any[] = Array.isArray(apiData.quotationDocs) ? apiData.quotationDocs : [];
+      if (quoteDocs.length > 0) {
+        const leadGroups = new Map<string, any[]>();
+        for (const doc of quoteDocs) {
+          const parsed = extractFinancialsFromQuotation(doc.content_json);
+          if (parsed) {
+            quoteDocMap.set(doc.template_id, parsed);
+            if (doc.lead_id) {
+              const arr = leadGroups.get(doc.lead_id) || [];
+              arr.push({
+                ...parsed,
+                template_id: doc.template_id,
+                version: doc.lead_version || doc.version,
+                is_final: Boolean(doc.content_json?.is_final === true || ['accepted', 'approved', 'finalized'].includes((doc.content_json?.status || '').toLowerCase())),
+              });
+              leadGroups.set(doc.lead_id, arr);
             }
-            leadGroups.forEach((quotes, leadId) => {
-              quotes.sort((a, b) => (b.version || 0) - (a.version || 0));
-              allLeadQuotesMap.set(leadId, quotes);
-            });
           }
-        } catch (err) {
-          console.warn('[Finance] Quotations document lookup notice:', err);
         }
+        leadGroups.forEach((quotes, leadId) => {
+          quotes.sort((a, b) => (b.version || 0) - (a.version || 0));
+          allLeadQuotesMap.set(leadId, quotes);
+        });
       }
 
       // 5. Build Unified Client Finance Records
@@ -1134,9 +1039,10 @@ export default function FinancePage() {
           });
         } else {
           // CLEAN INITIAL STATE: STRICT ZERO DUMMY DATA FOR NEW BOOKED CLIENTS
+          const fallbackPkg = Number((c as any).total_package_amount || 0);
           const rawBase = hasFinalQuotation && linkedFinalQuote
             ? (linkedFinalQuote.base_package_price || linkedFinalQuote.subtotal_amount)
-            : 0;
+            : (fallbackPkg > 0 ? Math.round(fallbackPkg) : 0);
           const discount = hasFinalQuotation && linkedFinalQuote ? (linkedFinalQuote.discount_amount || 0) : 0;
           const accommodation = hasFinalQuotation && linkedFinalQuote ? (linkedFinalQuote.accommodation_charges || 0) : 0;
           const travel = hasFinalQuotation && linkedFinalQuote ? (linkedFinalQuote.travel_charges || 0) : 0;
@@ -1144,7 +1050,7 @@ export default function FinancePage() {
           const subtotal = Math.max(0, rawBase - discount + accommodation + travel + additional);
           const gstRate = hasFinalQuotation && linkedFinalQuote ? (linkedFinalQuote.gst_rate || 0) : 0;
           const gstAmount = Math.round((subtotal * gstRate) / 100);
-          const finalTotal = hasFinalQuotation && linkedFinalQuote ? linkedFinalQuote.final_total_amount : 0;
+          const finalTotal = hasFinalQuotation && linkedFinalQuote ? linkedFinalQuote.final_total_amount : (fallbackPkg > 0 ? Math.round(fallbackPkg) : 0);
           const effectiveMilestones = (hasFinalQuotation && Array.isArray(linkedFinalQuote?.milestones)) ? linkedFinalQuote.milestones : [];
           const calculatedCompletedTotal = effectiveMilestones
             .filter((m: any) => m.status === 'completed')
@@ -1191,36 +1097,48 @@ export default function FinancePage() {
         }
       }
 
-      // Deduplicate finalRecords so no duplicate client or lead card is ever shown in Finance
-      // NOTE: We NEVER deduplicate by phone number because a client can book multiple events/shoots (e.g. Wedding, Baby Shoot, Pre-Wedding).
-      const seenCardKeys = new Set<string>();
-      const deduplicatedRecords: ClientFinanceRecord[] = [];
+      // Deduplicate finalRecords: always keep the richest non-deleted funded record per client/lead/quote
+      // while preserving chronological New-to-Old order.
+      const recordScore = (r: ClientFinanceRecord) => {
+        let score = 0;
+        if (!r.is_deleted && r.status !== 'trash') score += 10000;
+        if (Number(r.final_total_amount || 0) > 0) score += 5000;
+        if (r.has_final_quotation) score += 2000;
+        if (Number(r.received_amount || 0) > 0) score += 1000;
+        if (Array.isArray(r.milestones) && r.milestones.length > 0) score += 500;
+        return score;
+      };
 
+      const bestByKey = new Map<string, ClientFinanceRecord>();
       for (const rec of finalRecords) {
         const c = rec.client;
         const cId = c?.id || rec.client_id;
         const lId = c?.lead_id;
         const qId = rec.final_quotation_id || (c as any)?.final_quotation_id;
-
-        const idKey = cId ? `id:${cId}` : null;
-        const leadKey = lId ? `lead:${lId}` : null;
-        const quoteKey = qId ? `quote:${qId}` : null;
-
-        const isDuplicate = 
-          (idKey && seenCardKeys.has(idKey)) ||
-          (leadKey && seenCardKeys.has(leadKey)) ||
-          (quoteKey && seenCardKeys.has(quoteKey));
-
-        if (isDuplicate) {
-          continue;
+        const keys = [cId ? `id:${cId}` : null, lId ? `lead:${lId}` : null, qId ? `quote:${qId}` : null].filter(Boolean) as string[];
+        let incumbent: ClientFinanceRecord | undefined;
+        for (const k of keys) {
+          if (bestByKey.has(k)) { incumbent = bestByKey.get(k); break; }
         }
-
-        if (idKey) seenCardKeys.add(idKey);
-        if (leadKey) seenCardKeys.add(leadKey);
-        if (quoteKey) seenCardKeys.add(quoteKey);
-
-        deduplicatedRecords.push(rec);
+        const winner = !incumbent || recordScore(rec) > recordScore(incumbent) ? rec : incumbent;
+        for (const k of keys) bestByKey.set(k, winner);
       }
+
+      const emitted = new Set<ClientFinanceRecord>();
+      const deduplicatedRecords: ClientFinanceRecord[] = [];
+      for (const rec of finalRecords) {
+        const c = rec.client;
+        const cId = c?.id || rec.client_id;
+        const lId = c?.lead_id;
+        const qId = rec.final_quotation_id || (c as any)?.final_quotation_id;
+        const keys = [cId ? `id:${cId}` : null, lId ? `lead:${lId}` : null, qId ? `quote:${qId}` : null].filter(Boolean) as string[];
+        const chosen = (keys.map(k => bestByKey.get(k)).find(Boolean)) || rec;
+        if (!emitted.has(chosen)) {
+          emitted.add(chosen);
+          deduplicatedRecords.push(chosen);
+        }
+      }
+      deduplicatedRecords.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
 
       setFinanceRecords(deduplicatedRecords);
       memCachedFinanceRecords = deduplicatedRecords;
@@ -1228,78 +1146,33 @@ export default function FinancePage() {
         setExpandedCards(new Set([deduplicatedRecords[0].id]));
       }
 
-      // 6. Fetch Studio Expenses & Crew Payouts (Strict Studio Owner Isolation)
-      let studioExpenseList: FinanceExpenseItem[] = [];
-      try {
-        let studioExpQuery = supabase
-          .from('studio_expenses')
-          .select(`
-            *,
-            project:fw_projects(id, client_name),
-            member:fw_team_members(id, name, primary_role)
-          `)
-          .order('expense_date', { ascending: false });
-
-        if (workspaceId && workspaceId !== 'ws_demo') {
-          studioExpQuery = studioExpQuery.eq('user_id', workspaceId);
-        }
-
-        const { data: studioExpData, error: studioExpErr } = await studioExpQuery;
-        if (!studioExpErr && studioExpData) {
-          studioExpenseList = studioExpData.map((se: any) => {
-            const clientName = se.project?.client_name || se.client_name || (se.notes?.match(/for ([^(•]+)/)?.[1] || '').trim();
-            const memberName = se.member?.name || (se.title ? se.title.split(' - ')[0] : 'Crew Member');
-            const notesStr = se.notes
-              ? `${se.notes}${se.reference_no ? ` • UTR: ${se.reference_no}` : ''}`
-              : (se.reference_no ? `UTR: ${se.reference_no}` : null);
-
-            return {
-              id: se.id,
-              user_id: se.user_id,
-              workspace_id: se.user_id,
-              client_id: se.project_id || null,
-              expense_type: 'team_payout' as const,
-              category: se.category || 'Crew Payout',
-              title: se.title,
-              amount: Number(se.amount) || 0,
-              payment_date: se.expense_date || se.created_at?.split('T')[0] || '',
-              paid_to: memberName,
-              payment_mode: se.payment_mode || 'UPI',
-              status: 'paid' as const,
-              receipt_url: null,
-              notes: notesStr,
-              created_at: se.created_at,
-              updated_at: se.updated_at,
-              client: clientName ? ({ name: clientName } as any) : null
-            };
-          });
-        }
-      } catch (sExpErr) {
-        console.warn('[Finance] studio_expenses query notice:', sExpErr);
-      }
-
-      // Also query general finance_expenses for other studio expenses
-      let legacyExpenseList: FinanceExpenseItem[] = [];
-      try {
-        let expenseQuery = supabase
-          .from('finance_expenses')
-          .select('*')
-          .order('payment_date', { ascending: false })
-          .limit(1000);
-
-        if (workspaceId && workspaceId !== 'ws_demo') {
-          expenseQuery = expenseQuery.or(`user_id.eq.${workspaceId},workspace_id.eq.${workspaceId}`);
-        }
-
-        const { data: expenseData } = await expenseQuery;
-        if (expenseData) {
-          legacyExpenseList = expenseData;
-        }
-      } catch (legErr) {
-        console.warn('[Finance] finance_expenses query notice:', legErr);
-      }
-
-      // Combine studio_expenses and general expenses
+      const studioExpenseList: FinanceExpenseItem[] = (Array.isArray(apiData.studioExpenses) ? apiData.studioExpenses : []).map((se: any) => {
+        const clientName = se.project?.client_name || se.client_name || (se.notes?.match(/for ([^(â€¢]+)/)?.[1] || '').trim();
+        const memberName = se.member?.name || (se.title ? se.title.split(' - ')[0] : 'Crew Member');
+        const notesStr = se.notes
+          ? `${se.notes}${se.reference_no ? ` â€¢ UTR: ${se.reference_no}` : ''}`
+          : (se.reference_no ? `UTR: ${se.reference_no}` : null);
+        return {
+          id: se.id,
+          user_id: se.user_id,
+          workspace_id: se.user_id,
+          client_id: se.project_id || null,
+          expense_type: 'team_payout' as const,
+          category: se.category || 'Crew Payout',
+          title: se.title,
+          amount: Number(se.amount) || 0,
+          payment_date: se.expense_date || se.created_at?.split('T')[0] || '',
+          paid_to: memberName,
+          payment_mode: se.payment_mode || 'UPI',
+          status: 'paid' as const,
+          receipt_url: null,
+          notes: notesStr,
+          created_at: se.created_at,
+          updated_at: se.updated_at,
+          client: clientName ? ({ name: clientName } as any) : null
+        };
+      });
+      const legacyExpenseList: FinanceExpenseItem[] = Array.isArray(apiData.financeExpenses) ? apiData.financeExpenses : [];
       const studioIds = new Set(studioExpenseList.map(s => s.id));
       const combinedExpenses = [
         ...studioExpenseList,
@@ -1308,24 +1181,8 @@ export default function FinancePage() {
       setExpenses(combinedExpenses);
       memCachedFinanceExpenses = combinedExpenses;
 
-      // 7. Fetch Audit Logs
-      try {
-        let auditQuery = supabase
-          .from('finance_audit_logs')
-          .select('*')
-          .order('created_at', { ascending: false })
-          .limit(100);
-
-        if (workspaceId && workspaceId !== 'ws_demo') {
-          auditQuery = auditQuery.or(`user_id.eq.${workspaceId},workspace_id.eq.${workspaceId}`);
-        }
-
-        const { data: auditData } = await auditQuery;
-        if (auditData) {
-          setAuditLogs(auditData as FinanceAuditLog[]);
-        }
-      } catch (auditErr) {
-        console.warn('Audit logs fetch notice:', auditErr);
+      if (Array.isArray(apiData.auditLogs)) {
+        setAuditLogs(apiData.auditLogs as FinanceAuditLog[]);
       }
 
       setClients(clientList);
@@ -1358,13 +1215,13 @@ export default function FinancePage() {
   ) => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const workspaceId = session?.user?.id || 'ws_demo';
-      const actorName = session?.user?.user_metadata?.full_name || 'Admin';
+      const resolvedWsId = await resolveFinanceWsId();
+      const actorName = userName || session?.user?.user_metadata?.full_name || 'Admin';
 
       const entry: FinanceAuditLog = {
         id: `log_${Date.now()}_${Math.random().toString(36).substring(5)}`,
-        workspace_id: workspaceId,
-        user_id: workspaceId,
+        workspace_id: resolvedWsId,
+        user_id: resolvedWsId,
         client_id: client_id || null,
         client_name: client_name || null,
         log_type,
@@ -1377,8 +1234,14 @@ export default function FinancePage() {
 
       setAuditLogs(prev => [entry, ...prev]);
 
-      if (workspaceId !== 'ws_demo') {
-        await supabase.from('finance_audit_logs').insert([entry]);
+      if (resolvedWsId !== 'ws_demo') {
+        const res = await authFetchJson('/api/workspace/finance', {
+          method: 'POST',
+          body: JSON.stringify({ action: 'save_audit_log', workspace_id: resolvedWsId, entry }),
+        });
+        if (res?.entry?.id) {
+          setAuditLogs(prev => prev.map(x => (x.id === entry.id ? res.entry : x)));
+        }
       }
     } catch (err) {
       console.warn('Failed to log finance audit:', err);
@@ -1395,62 +1258,23 @@ export default function FinancePage() {
     });
   };
 
-  // Persist finance record changes to Supabase
+  // Persist finance record changes to Supabase via authenticated server API
   const updateFinanceRecordInDB = async (record: ClientFinanceRecord) => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const workspaceId = session?.user?.id || 'ws_demo';
+      const resolvedWsId = await resolveFinanceWsId();
+      if (resolvedWsId === 'ws_demo') return;
 
-      const payload = {
-        user_id: workspaceId,
-        workspace_id: workspaceId,
-        client_id: record.client_id,
-        base_package_price: Math.round(record.base_package_price),
-        discount_amount: Math.round(record.discount_amount),
-        accommodation_charges: Math.round(record.accommodation_charges),
-        travel_charges: Math.round(record.travel_charges),
-        additional_charges: Math.round(record.additional_charges),
-        subtotal_amount: Math.round(record.subtotal_amount),
-        gst_rate: record.gst_rate,
-        gst_amount: Math.round(record.gst_amount),
-        final_total_amount: Math.round(record.final_total_amount),
-        received_amount: Math.round(record.received_amount),
-        pending_amount: Math.round(record.pending_amount),
-        payment_status: record.payment_status,
-        milestones: record.milestones || [],
-        updated_at: new Date().toISOString()
-      };
-
-      if (workspaceId !== 'ws_demo') {
-        const { data: existingRec } = await supabase
-          .from('client_finance_records')
-          .select('id')
-          .eq('client_id', record.client_id)
-          .maybeSingle();
-
-        if (existingRec) {
-          await supabase
-            .from('client_finance_records')
-            .update(payload)
-            .eq('client_id', record.client_id);
-        } else {
-          await supabase
-            .from('client_finance_records')
-            .insert([{ ...payload, created_at: new Date().toISOString() }]);
-        }
-
-        // Also update client totals (preserving manual status)
-        await supabase
-          .from('workspace_clients')
-          .update({
-            total_package_amount: record.final_total_amount,
-            paid_amount: record.received_amount,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', record.client_id);
-      }
-    } catch (e) {
+      await authFetchJson('/api/workspace/finance', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'upsert_record',
+          workspace_id: resolvedWsId,
+          record,
+        }),
+      });
+    } catch (e: any) {
       console.error('Error updating finance record in DB:', e);
+      alert('Failed to save finance update: ' + (e?.message || 'Please check your connection and try again.'));
     }
   };
 
@@ -1478,34 +1302,18 @@ export default function FinancePage() {
     }));
 
     try {
-      // 1. Fetch current client to preserve custom_data
-      const { data: currentClient } = await supabase
-        .from('workspace_clients')
-        .select('*')
-        .eq('id', clientId)
-        .maybeSingle();
-
-      const existingCustom = (currentClient?.custom_data as any) || {};
-      const updatedCustom = { ...existingCustom, handled_by: memberName };
-
-      // Update workspace_clients with handled_by ONLY (strictly isolated from project_manager_*)
-      await supabase
-        .from('workspace_clients')
-        .update({
-          handled_by: memberName,
-          custom_data: updatedCustom,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', clientId);
-
-      // Also update client_finance_records
-      await supabase
-        .from('client_finance_records')
-        .update({
-          handled_by: memberName,
-          updated_at: new Date().toISOString()
-        })
-        .eq('client_id', clientId);
+      const resolvedWsId = await resolveFinanceWsId();
+      if (resolvedWsId !== 'ws_demo') {
+        await authFetchJson('/api/workspace/finance', {
+          method: 'POST',
+          body: JSON.stringify({
+            action: 'assign_team',
+            workspace_id: resolvedWsId,
+            clientId,
+            memberName,
+          }),
+        });
+      }
 
       const targetClient = clients.find(c => c.id === clientId);
       logAudit(
@@ -1515,8 +1323,9 @@ export default function FinancePage() {
         clientId,
         targetClient?.name
       );
-    } catch (err) {
-      console.warn('Error saving team member assignment:', err);
+    } catch (err: any) {
+      console.error('Error saving team member assignment:', err);
+      alert('Failed to save team member assignment: ' + (err?.message || 'Unknown error'));
     }
   };
 
@@ -1527,22 +1336,23 @@ export default function FinancePage() {
       setTeamMembersList(prev => [...prev, cleanName]);
     }
 
-    // Persist new team member to fw_team_members in Supabase
+    // Persist new team member to fw_team_members via authenticated server API (no invalid workspace_id column)
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const workspaceId = session?.user?.id;
-      if (workspaceId) {
-        await supabase.from('fw_team_members').insert([{
-          user_id: workspaceId,
-          workspace_id: workspaceId,
-          name: cleanName,
-          primary_role: 'Executive',
-          is_active: true,
-          created_at: new Date().toISOString()
-        }]);
+      const resolvedWsId = await resolveFinanceWsId();
+      if (resolvedWsId && resolvedWsId !== 'ws_demo') {
+        await authFetchJson('/api/workspace/finance', {
+          method: 'POST',
+          body: JSON.stringify({
+            action: 'add_team_member',
+            workspace_id: resolvedWsId,
+            name: cleanName,
+          }),
+        });
       }
-    } catch (e) {
-      console.warn('Could not insert team member into fw_team_members:', e);
+    } catch (e: any) {
+      console.error('Could not insert team member into fw_team_members:', e);
+      alert('Failed to add team member: ' + (e?.message || 'Unknown error'));
+      return;
     }
 
     await handleAssignTeamMember(clientId, cleanName);
@@ -1564,44 +1374,23 @@ export default function FinancePage() {
     }
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const workspaceId = session?.user?.id || 'ws_demo';
-
-      // 1. Save in localStorage
+      const resolvedWsId = await resolveFinanceWsId();
       if (typeof window !== 'undefined') {
-        localStorage.setItem(`fw_milestone_templates_${workspaceId}`, JSON.stringify(updatedList));
+        localStorage.setItem(`fw_milestone_templates_${resolvedWsId}`, JSON.stringify(updatedList));
       }
-
-      // 2. Persist in workspace_finance_settings in Supabase
-      if (workspaceId !== 'ws_demo') {
-        const { data: existing } = await supabase
-          .from('workspace_finance_settings')
-          .select('id')
-          .eq('user_id', workspaceId)
-          .maybeSingle();
-
-        if (existing) {
-          await supabase
-            .from('workspace_finance_settings')
-            .update({
-              payment_milestone_templates: updatedList,
-              updated_at: new Date().toISOString()
-            })
-            .eq('user_id', workspaceId);
-        } else {
-          await supabase
-            .from('workspace_finance_settings')
-            .insert([{
-              user_id: workspaceId,
-              workspace_id: workspaceId,
-              payment_milestone_templates: updatedList,
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString()
-            }]);
-        }
+      if (resolvedWsId !== 'ws_demo') {
+        await authFetchJson('/api/workspace/finance', {
+          method: 'POST',
+          body: JSON.stringify({
+            action: 'save_milestone_template',
+            workspace_id: resolvedWsId,
+            templates: updatedList,
+          }),
+        });
       }
-    } catch (e) {
-      console.warn('Error persisting milestone template in DB:', e);
+    } catch (e: any) {
+      console.error('Error persisting milestone template in DB:', e);
+      alert('Failed to save milestone template: ' + (e?.message || 'Unknown error'));
     }
   };
 
@@ -1971,29 +1760,22 @@ export default function FinancePage() {
     setIsDeletingRecord(true);
     try {
       const clientId = recordToDelete.client_id;
-      const { data: { session } } = await supabase.auth.getSession();
-      const workspaceId = session?.user?.id || currentWorkspaceId || 'ws_demo';
+      const resolvedWsId = await resolveFinanceWsId();
       const trashedNotes = (recordToDelete.notes || '').includes('[status:trash]')
         ? recordToDelete.notes
         : ((recordToDelete.notes || '') + ' [status:trash]').trim();
 
-      if (workspaceId !== 'ws_demo') {
-        await supabase
-          .from('client_finance_records')
-          .update({
+      if (resolvedWsId !== 'ws_demo') {
+        await authFetchJson('/api/workspace/finance', {
+          method: 'POST',
+          body: JSON.stringify({
+            action: 'soft_delete',
+            workspace_id: resolvedWsId,
+            recordId: recordToDelete.id,
+            clientId,
             notes: trashedNotes,
-            status: 'trash',
-            updated_at: new Date().toISOString()
-          })
-          .eq('client_id', clientId);
-
-        await supabase
-          .from('workspace_clients')
-          .update({
-            status: 'trash',
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', clientId);
+          }),
+        });
       }
 
       setFinanceRecords(prev => prev.map(r => {
@@ -2062,16 +1844,16 @@ export default function FinancePage() {
     const trimmed = newCategoryName.trim();
     if (!trimmed) return;
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const wsId = session?.user?.id || currentWorkspaceId;
-      if (wsId && wsId !== 'ws_demo') {
-        await supabase
-          .from('workspace_expense_categories')
-          .insert({
-            workspace_id: wsId,
-            category_name: trimmed,
-            is_default: false
-          });
+      const resolvedWsId = await resolveFinanceWsId();
+      if (resolvedWsId && resolvedWsId !== 'ws_demo') {
+        await authFetchJson('/api/workspace/finance', {
+          method: 'POST',
+          body: JSON.stringify({
+            action: 'save_expense_category',
+            workspace_id: resolvedWsId,
+            categoryName: trimmed,
+          }),
+        });
       }
       setExpenseCategories(prev => Array.from(new Set([...prev, trimmed])));
       setExpenseFormData(prev => ({ ...prev, category: trimmed }));
@@ -2091,13 +1873,12 @@ export default function FinancePage() {
     }
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const workspaceId = session?.user?.id || 'ws_demo';
+      const resolvedWsId = await resolveFinanceWsId();
 
       const newExp: FinanceExpenseItem & { team_member_id?: string | null } = {
         id: `exp_${Date.now()}`,
-        user_id: workspaceId,
-        workspace_id: workspaceId,
+        user_id: resolvedWsId,
+        workspace_id: resolvedWsId,
         client_id: expenseFormData.client_id || null,
         expense_type: expenseFormData.expense_type,
         category: expenseFormData.category,
@@ -2113,10 +1894,19 @@ export default function FinancePage() {
         updated_at: new Date().toISOString()
       };
 
-      setExpenses(prev => [newExp, ...prev]);
-
-      if (workspaceId !== 'ws_demo') {
-        await supabase.from('finance_expenses').insert([newExp]);
+      if (resolvedWsId !== 'ws_demo') {
+        const res = await authFetchJson('/api/workspace/finance', {
+          method: 'POST',
+          body: JSON.stringify({
+            action: 'save_expense',
+            workspace_id: resolvedWsId,
+            expense: newExp,
+          }),
+        });
+        const savedExp = res?.expense || newExp;
+        setExpenses(prev => [savedExp, ...prev]);
+      } else {
+        setExpenses(prev => [newExp, ...prev]);
       }
 
       const clientObj = clients.find(c => c.id === newExp.client_id);
@@ -2142,8 +1932,9 @@ export default function FinancePage() {
         client_id: '',
         notes: ''
       });
-    } catch (e) {
+    } catch (e: any) {
       console.error('Error saving expense:', e);
+      alert('Failed to save expense: ' + (e?.message || 'Unknown error'));
     }
   };
 
@@ -2172,8 +1963,7 @@ export default function FinancePage() {
     }
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const workspaceId = session?.user?.id || 'ws_demo';
+      const workspaceId = await resolveFinanceWsId();
 
       const updatedExp: FinanceExpenseItem & { team_member_id?: string | null } = {
         id: expenseEditFormData.id,
@@ -2197,23 +1987,14 @@ export default function FinancePage() {
       setExpenses(prev => prev.map(e => e.id === updatedExp.id ? updatedExp : e));
 
       if (workspaceId !== 'ws_demo') {
-        await supabase
-          .from('finance_expenses')
-          .update(updatedExp)
-          .eq('id', updatedExp.id);
-
-        await supabase
-          .from('studio_expenses')
-          .update({
-            title: updatedExp.title,
-            amount: updatedExp.amount,
-            category: updatedExp.category,
-            expense_date: updatedExp.payment_date,
-            payment_mode: updatedExp.payment_mode,
-            notes: updatedExp.notes,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', updatedExp.id);
+        await authFetchJson('/api/workspace/finance', {
+          method: 'POST',
+          body: JSON.stringify({
+            action: 'update_expense',
+            workspace_id: workspaceId,
+            expense: updatedExp,
+          }),
+        });
 
         // ── TWO-WAY SYNC TO ORIGIN SOURCES (SHOOT, DELIVERABLE, SALARY) ──
         const targetExp = expenses.find(e => e.id === updatedExp.id);
@@ -2490,9 +2271,16 @@ export default function FinancePage() {
           }
         }
 
-        // Delete the expense row from finance_expenses and studio_expenses
-        await supabase.from('finance_expenses').delete().eq('id', id);
-        await supabase.from('studio_expenses').delete().eq('id', id);
+        // Delete the expense row from finance_expenses and studio_expenses via server API
+        const resolvedWsId = await resolveFinanceWsId();
+        await authFetchJson('/api/workspace/finance', {
+          method: 'POST',
+          body: JSON.stringify({
+            action: 'delete_expense',
+            workspace_id: resolvedWsId,
+            id,
+          }),
+        });
 
         // Dispatch events for immediate visual update
         if (typeof window !== 'undefined') {

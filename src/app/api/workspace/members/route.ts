@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
+import { verifyMetaAuth } from '@/lib/meta-auth';
 import { createClient } from '@supabase/supabase-js';
 
 export const dynamic = 'force-dynamic';
@@ -78,12 +79,10 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const authHeader = req.headers.get('authorization');
-    const token = authHeader?.replace('Bearer ', '');
     const body = await req.json();
 
     const {
-      workspace_id,
+      workspace_id: rawWorkspaceId,
       name,
       email,
       phone,
@@ -98,17 +97,16 @@ export async function POST(req: NextRequest) {
       permissions
     } = body;
 
-    if (!token || !workspace_id || !name || !email) {
-      return NextResponse.json({ error: 'Missing required fields (workspace_id, name, email)' }, { status: 400 });
+    const auth = await verifyMetaAuth(req, rawWorkspaceId);
+    if (!auth.authorized) {
+      return auth.errorResponse || NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    const supabaseClient = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    );
-    const { data: { user }, error: authErr } = await supabaseClient.auth.getUser(token);
-    if (authErr || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const workspace_id = auth.workspaceId || rawWorkspaceId;
+    const user = { id: auth.userId };
+
+    if (!workspace_id || !name || !email) {
+      return NextResponse.json({ success: false, error: 'Missing required fields (workspace_id, name, email)' }, { status: 400 });
     }
 
     const cleanEmail = email.trim().toLowerCase();
@@ -189,6 +187,7 @@ export async function POST(req: NextRequest) {
         .eq('id', existingMember.id)
         .select()
         .single();
+      if (updateErr) throw new Error(updateErr.message);
       savedMember = updated || { ...memberPayload, id: existingMember.id };
     } else {
       if (explicitId) {
@@ -199,32 +198,36 @@ export async function POST(req: NextRequest) {
         .insert([memberPayload])
         .select()
         .single();
+      if (insertErr) throw new Error(insertErr.message);
       savedMember = inserted;
     }
 
     const targetMemberId = savedMember?.id || existingMember?.id || explicitId;
 
-    // 2.5 Ensure identical record in fw_team_members for calendar & foreign key constraints
+    // 2.5 Ensure identical record in fw_team_members scoped by studio workspace_id
     if (targetMemberId) {
-      try {
-        await supabaseAdmin
-          .from('fw_team_members')
-          .upsert({
-            id: targetMemberId,
-            user_id: user.id,
-            name: name.trim(),
-            primary_role: primary_role || 'FREELANCER',
-            phone_number: phone || null,
-            email: cleanEmail,
-            avatar_url: avatar_url || null,
-            default_daily_rate: numDailyRate,
-            default_currency: cleanCurrency,
-            payout_frequency: cleanFrequency,
-            is_active: true,
-            primary_type: memberPayload.primary_type,
-            member_types: memberPayload.member_types,
-          }, { onConflict: 'id' });
-      } catch (_) {}
+      const { error: fwTmErr } = await supabaseAdmin
+        .from('fw_team_members')
+        .upsert({
+          id: targetMemberId,
+          user_id: workspace_id,
+          name: name.trim(),
+          primary_role: primary_role || 'FREELANCER',
+          roles: Array.isArray(roles) ? roles : [primary_role || 'FREELANCER'],
+          phone_number: phone || null,
+          email: cleanEmail,
+          avatar_url: avatar_url || null,
+          default_daily_rate: numDailyRate,
+          default_currency: cleanCurrency,
+          payout_frequency: cleanFrequency,
+          is_active: true,
+          primary_type: memberPayload.primary_type,
+          member_types: memberPayload.member_types,
+        }, { onConflict: 'id' });
+      if (fwTmErr) {
+        console.error('[workspace_members POST] fw_team_members upsert failed:', fwTmErr.message);
+        throw new Error(fwTmErr.message);
+      }
 
       try {
         await supabaseAdmin
@@ -293,7 +296,7 @@ export async function POST(req: NextRequest) {
 
           // Try with direct columns
           const smpPayload: any = {
-            owner_id: user.id,
+            owner_id: workspace_id,
             member_id: targetMemberId,
             leads_access: permPayload.leads_access,
             team_manager_access: permPayload.team_manager_access,
@@ -326,27 +329,30 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    const resolvedSaved = savedMember || {
+      id: targetMemberId,
+      workspace_id,
+      email: cleanEmail,
+      name: name.trim(),
+      primary_role: primary_role || 'FREELANCER',
+      roles: Array.isArray(roles) ? roles : [primary_role || 'FREELANCER'],
+      member_types: cleanMemberTypes,
+      primary_type: cleanPrimaryType,
+      status: 'ACTIVE',
+    };
+
     return NextResponse.json({
       success: true,
-      member: savedMember || {
-        id: targetMemberId || 'temp_' + Date.now(),
-        workspace_id,
-        email: cleanEmail,
-        name: name.trim(),
-        primary_role: primary_role || 'FREELANCER',
-        roles: Array.isArray(roles) ? roles : [primary_role || 'FREELANCER'],
-        member_types: cleanMemberTypes,
-        primary_type: cleanPrimaryType,
-        status: 'ACTIVE',
-      },
+      member: resolvedSaved,
+      savedMember: resolvedSaved,
       message: 'Workspace partner registered successfully.',
     });
   } catch (err: any) {
     console.error('[workspace_members POST Exception]:', err);
-    return NextResponse.json({
-      success: true,
-      message: 'Workspace partner saved gracefully.',
-    });
+    return NextResponse.json(
+      { success: false, error: err?.message || 'Failed to save team member' },
+      { status: 500 }
+    );
   }
 }
 

@@ -26,23 +26,68 @@ export async function verifyMetaAuth(
       token = authHeader.substring(7);
     }
 
-    // 2. Extract Cookie fallback if Bearer Token is not present
+    // 2. Extract Cookie fallback (handles direct sb-access-token, unchunked, and .0/.1 chunked SSR cookies)
     if (!token) {
       token = req.cookies.get('sb-access-token')?.value || '';
     }
 
     if (!token) {
-      const cookieHeader = req.headers.get('cookie') || '';
-      const directMatch = cookieHeader.match(/sb-access-token=([^;]+)/i);
-      if (directMatch) {
-        token = decodeURIComponent(directMatch[1]);
-      } else {
-        const match = cookieHeader.match(/sb-[a-z0-9]+-auth-token=([^;]+)/i);
-        if (match) {
+      const decodeCookieToken = (rawVal: string): string => {
+        if (!rawVal) return '';
+        let val = decodeURIComponent(rawVal);
+        if (val.startsWith('base64-')) {
+          const b64 = val.slice(7);
           try {
-            const parsed = JSON.parse(decodeURIComponent(match[1]));
-            token = Array.isArray(parsed) ? parsed[0] : parsed?.access_token || '';
-          } catch (_) {}
+            val = Buffer.from(b64, 'base64url').toString('utf-8');
+          } catch {
+            val = Buffer.from(b64.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf-8');
+          }
+        }
+        try {
+          const parsed = JSON.parse(val);
+          return (Array.isArray(parsed) ? parsed[0] : parsed?.access_token) || '';
+        } catch {
+          return val.startsWith('ey') && val.split('.').length === 3 ? val : '';
+        }
+      };
+
+      const allCookies = req.cookies.getAll();
+      const chunkMap: Record<string, { idx: number; val: string }[]> = {};
+      const standalone: string[] = [];
+
+      for (const c of allCookies) {
+        if (c.name.includes('-auth-token')) {
+          const m = c.name.match(/^(.*?)\.(\d+)$/);
+          if (m) {
+            if (!chunkMap[m[1]]) chunkMap[m[1]] = [];
+            chunkMap[m[1]].push({ idx: parseInt(m[2], 10), val: c.value });
+          } else {
+            standalone.push(c.value);
+          }
+        }
+      }
+
+      for (const chunks of Object.values(chunkMap)) {
+        chunks.sort((a, b) => a.idx - b.idx);
+        standalone.unshift(chunks.map((c) => c.val).join(''));
+      }
+
+      for (const raw of standalone) {
+        const decoded = decodeCookieToken(raw);
+        if (decoded) {
+          token = decoded;
+          break;
+        }
+      }
+
+      if (!token) {
+        const cookieHeader = req.headers.get('cookie') || '';
+        const directMatch = cookieHeader.match(/sb-access-token=([^;]+)/i);
+        if (directMatch) {
+          token = decodeURIComponent(directMatch[1]);
+        } else {
+          const match = cookieHeader.match(/sb-[a-z0-9]+-auth-token=([^;]+)/i);
+          if (match) token = decodeCookieToken(match[1]);
         }
       }
     }

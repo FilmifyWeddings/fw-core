@@ -11,6 +11,8 @@ rm -f /var/www/fw-core/.next/lock* 2>/dev/null || true
 rm -rf /var/www/fw-core/node_modules/.zod* /var/www/fw-core/node_modules/.*-* 2>/dev/null || true
 
 echo "Fetching latest changes..."
+# Safety snapshot tag before reset
+git tag -f "pre-deploy-safety-$(date +%Y%m%d%H%M%S)" HEAD 2>/dev/null || true
 git fetch origin main
 git reset --hard origin/main
 
@@ -42,15 +44,10 @@ for ENV_FILE in /var/www/fw-core/.env.local /var/www/fw-core/.env /var/www/fw-co
       fi
     done
 
-    # Sync Active OpenAI API Key for Whisper & GPT-4o-mini
-    NEW_OPENAI_KEY=$(echo "c2stcHJvai1XN1Z2THc4aWptVGl4T2JHeWZlYTJYQVB3aEpFRDlLOFFFYkZ0U3JHb29JVEpZemtFRHlRUzlkUWNZZ2hWVWJqendUUUpSeE90VFQzQmxia0ZKQVQwZ1hxSjVoNDhwblpmOGZqRE5odW5NUzR2WEs1WTRIRG0xdlI3QUptaGZlUy1lMWVHMTdHLUpaQ0VVdW81MXU4SWRUNUJjb0E=" | base64 -d)
-    if grep -q "^OPENAI_API_KEY=" "$ENV_FILE"; then
-      sed -i "s|^OPENAI_API_KEY=.*|OPENAI_API_KEY=${NEW_OPENAI_KEY}|g" "$ENV_FILE"
-    else
-      echo "OPENAI_API_KEY=${NEW_OPENAI_KEY}" >> "$ENV_FILE"
-    fi
+    # Ensure OpenAI is permanently disabled in all environment files
+    sed -i "s|^OPENAI_API_KEY=.*|# OPENAI_API_KEY=DISABLED_PERMANENTLY|g" "$ENV_FILE" 2>/dev/null || true
 
-    echo "Google & OpenAI credentials synced in $ENV_FILE"
+    echo "Google OAuth & Environment credentials synced in $ENV_FILE"
   fi
 done
 
@@ -92,7 +89,10 @@ fi
 # Drop cached memory to maximize available physical RAM
 sync && echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true
 
-LOW_MEM=1 NEXT_CPU_COUNT=1 NODE_OPTIONS="--max-old-space-size=2048" npm run build
+LOW_MEM=1 NEXT_CPU_COUNT=1 NODE_OPTIONS="--max-old-space-size=2560" npm run build || {
+  echo "❌ Next.js build failed! Aborting deployment without restarting PM2..."
+  exit 1
+}
 
 echo "Building WhatsApp Persistent Worker..."
 cd /var/www/fw-core/baileys-worker || exit 1
@@ -112,7 +112,9 @@ fi
 
 echo "Restarting PM2 apps via ecosystem.config.js..."
 cd /var/www/fw-core || exit 1
-pm2 reload ecosystem.config.js --only "baileys-worker,fw-core" --update-env 2>/dev/null || pm2 restart ecosystem.config.js --only "baileys-worker,fw-core" --update-env 2>/dev/null || pm2 start ecosystem.config.js --only "baileys-worker,fw-core"
+pm2 delete fw-core 2>/dev/null || true
+pm2 start ecosystem.config.js --only "fw-core" --update-env 2>/dev/null || pm2 restart ecosystem.config.js --only "fw-core" --update-env 2>/dev/null || true
+pm2 restart ecosystem.config.js --only "baileys-worker" --update-env 2>/dev/null || pm2 start ecosystem.config.js --only "baileys-worker" --update-env 2>/dev/null || true
 pm2 save
 
 echo "Disabling local CPU InsightFace worker to save 100% DigitalOcean CPU (offloaded to Modal L4 GPU)..."
@@ -141,25 +143,25 @@ mkdir -p /var/www/fw-core/public
   ls -la /var/www || true
 } > /var/www/fw-core/public/face-diag.txt 2>&1 || true
 
-echo "Configuring Nginx large_client_header_buffers to permanently eliminate 400 Bad Request..."
+echo "Configuring Nginx large_client_header_buffers to permanently eliminate 400 Bad Request & 431 Header Too Large..."
 if command -v nginx >/dev/null 2>&1; then
   mkdir -p /etc/nginx/conf.d
   cat << 'EOF' > /etc/nginx/conf.d/00-buffers.conf
-client_header_buffer_size 8k;
-large_client_header_buffers 4 64k;
+client_header_buffer_size 16k;
+large_client_header_buffers 8 128k;
 EOF
   if nginx -t 2>/dev/null; then
     systemctl reload nginx 2>/dev/null || nginx -s reload 2>/dev/null || true
-    echo "Nginx buffers updated to 64k successfully via conf.d."
+    echo "Nginx buffers updated to 128k successfully via conf.d."
   else
     rm -f /etc/nginx/conf.d/00-buffers.conf
-    sed -i 's/large_client_header_buffers.*/large_client_header_buffers 4 64k;/g' /etc/nginx/nginx.conf 2>/dev/null || true
-    sed -i 's/client_header_buffer_size.*/client_header_buffer_size 8k;/g' /etc/nginx/nginx.conf 2>/dev/null || true
+    sed -i 's/large_client_header_buffers.*/large_client_header_buffers 8 128k;/g' /etc/nginx/nginx.conf 2>/dev/null || true
+    sed -i 's/client_header_buffer_size.*/client_header_buffer_size 16k;/g' /etc/nginx/nginx.conf 2>/dev/null || true
     if ! grep -q "large_client_header_buffers" /etc/nginx/nginx.conf 2>/dev/null; then
-      sed -i '/http {/a \    client_header_buffer_size 8k;\n    large_client_header_buffers 4 64k;' /etc/nginx/nginx.conf 2>/dev/null || true
+      sed -i '/http {/a \    client_header_buffer_size 16k;\n    large_client_header_buffers 8 128k;' /etc/nginx/nginx.conf 2>/dev/null || true
     fi
     nginx -t 2>/dev/null && (systemctl reload nginx 2>/dev/null || nginx -s reload 2>/dev/null || true)
-    echo "Nginx buffers updated to 64k via nginx.conf."
+    echo "Nginx buffers updated to 128k via nginx.conf."
   fi
 fi
 

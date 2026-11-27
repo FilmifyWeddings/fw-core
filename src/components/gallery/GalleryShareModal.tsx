@@ -373,7 +373,7 @@ export default function GalleryShareModal({
   const photoSelectionWhatsAppMessage = `Hello!\nHere's your exclusive access to the full event photo gallery. You can also select and mark your favorite photos directly within the gallery:\n\n${photoSelectionUrl}\n\nWe hope you enjoy browsing through the collection and finding the moments that mean the most to you.`;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/75 backdrop-blur-md overflow-y-auto animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[100000] flex items-center justify-center p-3 sm:p-6 bg-black/75 backdrop-blur-md overflow-y-auto animate-in fade-in duration-200">
       
       {/* Click outside backdrop to close */}
       <div className="fixed inset-0 -z-10" onClick={handleClose} />
@@ -831,7 +831,7 @@ export default function GalleryShareModal({
       ───────────────────────────────────────────────────────────── */}
       {isStandeeModalOpen && (
         <div
-          className="fixed inset-0 z-60 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-md overflow-y-auto"
+          className="fixed inset-0 z-[100010] flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-md overflow-y-auto"
           onClick={(e) => {
             if (e.target === e.currentTarget) setIsStandeeModalOpen(false);
           }}

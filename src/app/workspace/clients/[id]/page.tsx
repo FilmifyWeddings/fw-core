@@ -2497,7 +2497,8 @@ export default function ClientWorkspaceDetailPage() {
         const { data: fwProj } = await supabase
           .from('fw_projects')
           .select('id')
-          .or(`client_id.eq.${c.id},lead_id.eq.${c.lead_id || c.id}`)
+          .eq('client_id', c.id)
+          .limit(1)
           .maybeSingle();
         if (fwProj?.id) targetProjectId = fwProj.id;
       }

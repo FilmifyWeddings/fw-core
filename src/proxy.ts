@@ -75,9 +75,22 @@ export async function proxy(request: NextRequest) {
     // Instant recovery route to immediately resolve 431 header size bloat on any client
     if (pathname === '/clear-cookies' || pathname === '/fix-431') {
       const clearResponse = NextResponse.redirect(new URL('/login', request.url), { status: 303 });
+      const paths = ['/', '/workspace', '/dashboard', '/api', '/leads', '/quotations', '/team', '/partner'];
+      const host = request.headers.get('host') || request.nextUrl.host || '';
+      const domain = host.split(':')[0];
+      const isSub = domain.split('.').length > 2 && !domain.startsWith('localhost') && !domain.startsWith('127.');
+      const rootDomain = isSub ? domain.split('.').slice(-2).join('.') : domain;
+
       request.cookies.getAll().forEach((c) => {
-        clearResponse.cookies.set(c.name, '', { maxAge: 0, path: '/' });
+        paths.forEach((p) => {
+          clearResponse.cookies.set(c.name, '', { maxAge: 0, path: p });
+          clearResponse.cookies.set(c.name, '', { maxAge: 0, path: p, domain });
+          if (rootDomain && rootDomain !== domain) {
+            clearResponse.cookies.set(c.name, '', { maxAge: 0, path: p, domain: `.${rootDomain}` });
+          }
+        });
       });
+      clearResponse.headers.set('Clear-Site-Data', '"cookies", "storage"');
       return clearResponse;
     }
 
@@ -277,7 +290,7 @@ export async function proxy(request: NextRequest) {
       }
     }
 
-    // Proactively prune stale/orphaned auth token chunks & duplicate legacy cookies on every incoming request
+    // Clean legacy v1 auth token and foreign project auth tokens
     const allExistingCookies = request.cookies.getAll();
     if (allExistingCookies.length > 5) {
       let currentRef = '';
@@ -286,11 +299,16 @@ export async function proxy(request: NextRequest) {
       } catch (_) {}
 
       allExistingCookies.forEach((c) => {
-        // Prune cookies from other Supabase projects
-        if (c.name.startsWith('sb-') && currentRef && !c.name.startsWith(`sb-${currentRef}`)) {
+        // Prune foreign project auth tokens (never touch sb-access-token, sb-refresh-token, or active project)
+        if (
+          c.name.startsWith('sb-') &&
+          c.name.includes('-auth-token') &&
+          currentRef &&
+          !c.name.startsWith(`sb-${currentRef}`)
+        ) {
           response.cookies.set(c.name, '', { maxAge: 0, path: '/' });
         }
-        // Prune legacy v1 auth tokens only
+        // Prune legacy v1 auth token only
         if (c.name === 'supabase.auth.token') {
           response.cookies.set(c.name, '', { maxAge: 0, path: '/' });
         }
@@ -398,46 +416,117 @@ export async function proxy(request: NextRequest) {
       return null;
     };
 
+    // ── 0ms FAST PATH: Local JWT Decode (Zero external Supabase network latency) ──
     try {
-      const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
-        cookies: {
-          getAll() {
-            try {
-              return request.cookies.getAll();
-            } catch {
-              return [];
-            }
-          },
-          setAll(cookiesToSet) {
-            // Track active cookie names being set
-            const newlySetNames = new Set(cookiesToSet.map(c => c.name));
+      const allCookies = request.cookies.getAll();
+      const candidateTokens: string[] = [];
 
-            // Set cookies on request
-            cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
-            response = NextResponse.next({
-              request,
-            });
+      const authHeader = request.headers.get('authorization');
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        const bearerToken = authHeader.substring(7).trim();
+        if (bearerToken) candidateTokens.push(bearerToken);
+      }
 
-            // Set cookies on response with clean options and 365-day persistence
-            cookiesToSet.forEach(({ name, value, options }) =>
-              response.cookies.set(name, value, {
-                ...options,
-                sameSite: 'lax',
-                secure: process.env.NODE_ENV === 'production',
-                path: '/',
-                maxAge: options?.maxAge ?? 60 * 60 * 24 * 365,
-              })
-            );
-          },
-        },
+      const sbAccessToken = request.cookies.get('sb-access-token')?.value;
+      if (sbAccessToken) candidateTokens.push(sbAccessToken);
+
+      const chunkMap: { [baseName: string]: { index: number; value: string }[] } = {};
+      const standaloneValues: string[] = [];
+
+      allCookies.forEach(c => {
+        if (c.name.includes('-auth-token')) {
+          const match = c.name.match(/^(.*?)\.(\d+)$/);
+          if (match) {
+            const base = match[1];
+            const idx = parseInt(match[2], 10);
+            if (!chunkMap[base]) chunkMap[base] = [];
+            chunkMap[base].push({ index: idx, value: c.value });
+          } else {
+            standaloneValues.push(c.value);
+          }
+        }
       });
 
-      const { data, error: userError } = await supabase.auth.getUser();
-      if (!userError && data?.user) {
-        user = data.user;
+      Object.values(chunkMap).forEach(chunks => {
+        chunks.sort((a, b) => a.index - b.index);
+        const combined = chunks.map(c => c.value).join('');
+        standaloneValues.push(combined);
+      });
+
+      for (let rawVal of standaloneValues) {
+        if (!rawVal) continue;
+        try {
+          let unescaped = rawVal;
+          if (unescaped.startsWith('base64-')) {
+            try {
+              unescaped = Buffer.from(unescaped.substring(7), 'base64url').toString('utf-8');
+            } catch (_) {
+              try {
+                const normalized = unescaped.substring(7).replace(/-/g, '+').replace(/_/g, '/');
+                unescaped = Buffer.from(normalized, 'base64').toString('utf-8');
+              } catch (_) {}
+            }
+          }
+          const parsed = JSON.parse(unescaped);
+          const tok = parsed?.access_token || (Array.isArray(parsed) ? parsed[0] : null);
+          if (tok && typeof tok === 'string') candidateTokens.push(tok);
+        } catch (_) {
+          if (rawVal.startsWith('ey') && rawVal.split('.').length === 3) {
+            candidateTokens.push(rawVal);
+          }
+        }
       }
-    } catch {
-      /* ignore */
+
+      for (const tok of candidateTokens) {
+        const decodedUser = parseJwt(tok);
+        if (decodedUser) {
+          user = decodedUser;
+          break;
+        }
+      }
+    } catch (_) {}
+
+    // Only if local JWT didn't resolve an active user, attempt Supabase getUser with 3s hard timeout
+    if (!user) {
+      try {
+        const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+          cookies: {
+            getAll() {
+              try {
+                return request.cookies.getAll();
+              } catch {
+                return [];
+              }
+            },
+            setAll(cookiesToSet) {
+              cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
+              response = NextResponse.next({
+                request,
+              });
+              cookiesToSet.forEach(({ name, value, options }) =>
+                response.cookies.set(name, value, {
+                  ...options,
+                  sameSite: 'lax',
+                  secure: process.env.NODE_ENV === 'production',
+                  path: '/',
+                  maxAge: options?.maxAge ?? 60 * 60 * 24 * 365,
+                })
+              );
+            },
+          },
+        });
+
+        const getUserPromise = supabase.auth.getUser();
+        const timeoutPromise = new Promise<{ data: any; error: any }>((_, reject) =>
+          setTimeout(() => reject(new Error('Auth timeout')), 3000)
+        );
+        const { data, error: userError } = await Promise.race([getUserPromise, timeoutPromise]);
+        if (!userError && data?.user) {
+          user = data.user;
+        }
+      } catch {
+        /* ignore */
+      }
     }
 
     // Fallback 1: Direct cookie token inspection with proper chunk reassembly
@@ -673,46 +762,39 @@ export async function proxy(request: NextRequest) {
     // =========================================================================
     // 4. TENANT ACCESS GOVERNANCE: CHECK IS_PLATFORM_BLOCKED FOR /workspace
     // =========================================================================
-    if (user && (pathname === '/workspace' || pathname.startsWith('/workspace/'))) {
-      try {
-        const client = createClient(supabaseUrl, supabaseAnonKey);
-        const { data: prof } = await client
-          .from('profiles')
-          .select('is_platform_blocked')
-          .eq('id', user.id)
-          .maybeSingle();
+    // is_platform_blocked verified asynchronously in client workspace context
 
-        if (prof?.is_platform_blocked === true) {
-          return NextResponse.redirect(new URL('/blocked', request.url), { status: 303 });
-        }
-      } catch (_) {}
-    }
-
-    const isProtectedRoute =
-      !isPublicQuotationPreview && (
-        pathname.startsWith('/dashboard') ||
-        pathname.startsWith('/workspace') ||
-        pathname.startsWith('/integrations') ||
-        pathname.startsWith('/team-manager') ||
-        pathname.startsWith('/leads') ||
-        pathname.startsWith('/single-send') ||
-        pathname.startsWith('/quotations') ||
-        pathname.startsWith('/settings') ||
-        pathname.startsWith('/broadcast-campaigns') ||
-        pathname.startsWith('/admin') ||
-        pathname.startsWith('/api/integrations')
-      );
-
-    if (isProtectedRoute && !user) {
-      if (pathname.startsWith('/api/')) {
+    // API Route Protection: fail-closed 401 Unauthorized for private workspace APIs,
+    // while explicitly allowing guest portals (gallery, moodboard, review, quotation response),
+    // webhooks, auth/OAuth callbacks, and public health/media routes.
+    if (!user && pathname.startsWith('/api/') && !pathname.startsWith('/api/public') && !pathname.startsWith('/api/webhooks')) {
+      const isPublicEndpoint =
+        pathname.startsWith('/api/auth') ||
+        pathname.startsWith('/api/facebook') ||
+        pathname.startsWith('/api/meta') ||
+        pathname.startsWith('/api/billing/plans') ||
+        pathname.startsWith('/api/fonts') ||
+        pathname.startsWith('/api/gallery') ||
+        pathname.startsWith('/api/moodboard') ||
+        pathname.startsWith('/api/quotations/response') ||
+        pathname.startsWith('/api/review') ||
+        pathname.startsWith('/api/vendors') ||
+        pathname.startsWith('/api/team/check-invite') ||
+        pathname.startsWith('/api/team/link-account') ||
+        pathname.startsWith('/api/agent') ||
+        pathname.startsWith('/api/cron') ||
+        pathname.startsWith('/api/proxy-image') ||
+        pathname.startsWith('/api/pdf') ||
+        pathname.startsWith('/api/system/health') ||
+        pathname === '/api/integrations/baileys/fetch-groups';
+      if (!isPublicEndpoint) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       }
-      const loginUrl = new URL('/login', request.url);
-      loginUrl.searchParams.set('redirectTo', pathname);
-      const redirectResponse = NextResponse.redirect(loginUrl, { status: 303 });
-
-      return redirectResponse;
     }
+
+    // Page Routes: Pass through cleanly to Next.js so BhamstraContext and
+    // WorkspaceHydrationGate can resolve authentication instantly via client localStorage / IndexedDB.
+    // Client components handle any needed login redirects without server 303 bouncing.
 
     return response;
   } catch (err) {

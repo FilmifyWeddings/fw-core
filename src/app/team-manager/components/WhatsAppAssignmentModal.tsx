@@ -272,40 +272,43 @@ Please confirm your slot.
     onClose();
   };
 
-  // Save Commercials to Database & Finance Sync
-  const handleSaveCommercials = () => {
-    // 1. INSTANT OPTIMISTIC CLOSE (0ms delay)
-    onClose();
-
-    // 2. TRIGGER BACKGROUND SILENT ASYNC PERSISTENCE
-    const effectiveWsId = workspaceId || (member as any)?.workspace_id || '';
+  // Save Commercials to Database & Finance Sync atomically before closing
+  const handleSaveCommercials = async () => {
+    if (isSavingCommercials) return;
+    setIsSavingCommercials(true);
+    const effectiveWsId =
+      workspaceId ||
+      (member as any)?.workspace_id ||
+      (typeof window !== 'undefined' ? localStorage.getItem('sc_active_workspace_id') || '' : '');
     const targetAssignmentId = explicitAssignmentId || (subEvent?.fw_assignments || []).find(
-      (a: any) => a.required_role?.toLowerCase() === role?.toLowerCase()
+      (a: any) => a.required_role?.toLowerCase() === role?.toLowerCase() && (!a.assigned_member_id || a.assigned_member_id === member?.id)
     )?.id;
 
-    saveCrewAssignmentCommercials({
-      workspaceId: effectiveWsId,
-      assignmentId: targetAssignmentId,
-      projectId: project?.id,
-      subEventId: subEvent?.id,
-      member: {
-        id: member.id,
-        name: cleanMemberName,
-        phone: member.phone_number || member.phone || '',
-        primary_role: role
-      },
-      assignedRole: role,
-      agreedAmount: numericAgreed,
-      advancePaid: numericAdvance,
-      paymentStatus: paymentStatus,
-      paymentDate: paymentDate,
-      paymentMethod: paymentMethod,
-      referenceNo: refNo || undefined,
-      notes: notes || `Assigned via Team Manager for ${clientName} (${eventTitle})`,
-      clientName: clientName,
-      eventName: eventTitle,
-      eventDate: subEvent?.event_date
-    }).then((res) => {
+    try {
+      const res = await saveCrewAssignmentCommercials({
+        workspaceId: effectiveWsId,
+        assignmentId: targetAssignmentId,
+        projectId: project?.id,
+        subEventId: subEvent?.id,
+        member: {
+          id: member.id,
+          name: cleanMemberName,
+          phone: member.phone_number || member.phone || '',
+          primary_role: role
+        },
+        assignedRole: role,
+        agreedAmount: numericAgreed,
+        advancePaid: numericAdvance,
+        paymentStatus: paymentStatus,
+        paymentDate: paymentDate,
+        paymentMethod: paymentMethod,
+        referenceNo: refNo || undefined,
+        notes: notes || `Assigned via Team Manager for ${clientName} (${eventTitle})`,
+        clientName: clientName,
+        eventName: eventTitle,
+        eventDate: subEvent?.event_date
+      });
+
       if (onCommercialsSaved) onCommercialsSaved(res);
       if (onConfirmAssignment) onConfirmAssignment(res);
       if (project?.id && !hasLoggedAssignmentRef.current) {
@@ -325,9 +328,13 @@ Please confirm your slot.
           newRate: numericAgreed,
         }).catch(() => {});
       }
-    }).catch(err => {
-      console.error('[WhatsAppAssignmentModal] Background save error:', err);
-    });
+      onClose();
+    } catch (err: any) {
+      console.error('[WhatsAppAssignmentModal] Save error:', err);
+      alert('Failed to save crew assignment: ' + (err?.message || 'Please check your connection and try again.'));
+    } finally {
+      setIsSavingCommercials(false);
+    }
   };
 
   const currentTimeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });

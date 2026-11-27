@@ -53,16 +53,20 @@ export interface PartnerAlbumOrder {
   partner_name: string;
   client_name: string;
   project_id?: string;
+  deliverable_id?: string;
+  category?: 'album_design' | 'album_printing' | string;
+  role?: string;
   album_type: string;
   sheet_count: number;
   rate_per_sheet: number;
   total_amount: number;
   paid_amount: number;
   balance_amount: number;
-  order_status: 'DESIGNING' | 'PRINTING' | 'BINDING' | 'DISPATCHED' | 'DELIVERED';
-  payment_status: 'PENDING' | 'PARTIAL' | 'PAID';
+  order_status: 'DESIGNING' | 'PRINTING' | 'BINDING' | 'DISPATCHED' | 'DELIVERED' | string;
+  payment_status: 'PENDING' | 'PARTIAL' | 'PAID' | string;
   order_date: string;
   delivery_date?: string;
+  due_date?: string;
   notes?: string;
   created_at?: string;
   updated_at?: string;
@@ -1174,85 +1178,33 @@ export async function unassignCrewSlot(params: {
   roleShortCode?: string;
   roleName?: string;
   teamMemberId?: string;
-}): Promise<{ success: boolean }> {
+}): Promise<{ success: boolean; error?: string }> {
   try {
-    // 1. Try Supabase RPC unassign_crew_slot_strict (Complete multi-table purge)
-    try {
-      await supabase.rpc('unassign_crew_slot_strict', {
-        p_workspace_id: params.workspaceId,
-        p_event_id: params.eventId,
-        p_sub_event_id: String(params.subEventId || ''),
-        p_role_short_code: params.roleShortCode || params.roleName?.slice(0, 4) || '',
-        p_member_id: params.teamMemberId || null
-      });
-    } catch (_) {}
+    const { authFetchJson } = await import('@/lib/client-auth-fetch');
+    const effectiveWsId =
+      params.workspaceId ||
+      (typeof window !== 'undefined' ? localStorage.getItem('sc_active_workspace_id') || '' : '');
 
-    // 1.5. Try fallback RPC unassign_crew_slot
-    try {
-      await supabase.rpc('unassign_crew_slot', {
-        p_workspace_id: params.workspaceId,
-        p_event_id: params.eventId,
-        p_sub_event_id: String(params.subEventId || ''),
-        p_role_short_code: params.roleShortCode || params.roleName?.slice(0, 4) || ''
-      });
-    } catch (_) {}
-
-    // 2. Direct clean up in fw_assignments
-    const cleanAssignId = String(params.assignmentId || '');
-    if (cleanAssignId && !cleanAssignId.includes('-role-')) {
-      await supabase.from('fw_assignments').update({
-        assigned_member_id: null,
-        assigned_member_name: null,
-        agreed_amount: 0,
-        advance_amount: 0,
-        paid_amount: 0,
-        balance_amount: 0,
-        status: 'pending',
-        payment_status: 'pending',
-        notes: null
-      }).eq('id', cleanAssignId);
-    } else if (params.subEventId && params.roleName) {
-      await supabase.from('fw_assignments').update({
-        assigned_member_id: null,
-        assigned_member_name: null,
-        agreed_amount: 0,
-        advance_amount: 0,
-        paid_amount: 0,
-        balance_amount: 0,
-        status: 'pending',
-        payment_status: 'pending',
-        notes: null
-      }).eq('sub_event_id', params.subEventId).eq('required_role', params.roleName);
-    }
-
-    // 3. Purge from crew_assignments_finance and team_event_payouts if memberId was given
-    if (params.teamMemberId) {
-      try {
-        let q = supabase.from('crew_assignments_finance').delete().eq('team_member_id', params.teamMemberId);
-        if (params.subEventId) q = q.eq('sub_event_id', params.subEventId);
-        else if (params.eventId) q = q.eq('event_id', params.eventId);
-        if (params.roleName) q = q.eq('role_name', params.roleName);
-        await q;
-      } catch (_) {}
-      try {
-        let q = supabase.from('team_event_payouts').delete().eq('member_id', params.teamMemberId);
-        if (params.subEventId) q = q.eq('sub_event_id', params.subEventId);
-        else if (params.eventId) q = q.eq('project_id', params.eventId);
-        if (params.roleName) q = q.eq('role', params.roleName);
-        await q;
-      } catch (_) {}
-    }
+    await authFetchJson('/api/assignments/commercials', {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'unassign',
+        ...params,
+        workspaceId: effectiveWsId,
+      }),
+    });
 
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('team_finance_updated', {
         detail: { memberId: params.teamMemberId, unassigned: true }
       }));
+      window.dispatchEvent(new CustomEvent('finance_expenses_updated'));
     }
 
     return { success: true };
-  } catch (err) {
+  } catch (err: any) {
     console.error('[team-finance-sync] unassignCrewSlot error:', err);
-    return { success: false };
+    return { success: false, error: err?.message || 'Failed to unassign crew slot' };
   }
 }
 
@@ -1511,12 +1463,24 @@ export async function recordPayoutTransaction(
 
 // ── 2. PARTNER ALBUM ORDERS ──────────────────────────────────────────────────
 
-export async function fetchPartnerAlbumOrders(workspaceId: string, partnerId: string): Promise<PartnerAlbumOrder[]> {
+export async function fetchPartnerAlbumOrders(
+  workspaceId: string, 
+  partnerId: string,
+  partnerName?: string,
+  partnerEmail?: string
+): Promise<PartnerAlbumOrder[]> {
+  const resultOrders: PartnerAlbumOrder[] = [];
+  const seenIds = new Set<string>();
+
   try {
     let query = supabase
       .from('partner_album_orders')
-      .select('*')
-      .eq('partner_id', partnerId);
+      .select('*');
+
+    if (partnerId) {
+      const emailFilter = partnerEmail ? `,partner_email.ilike.%${partnerEmail}%` : '';
+      query = query.or(`partner_id.eq.${partnerId}${emailFilter}`);
+    }
 
     if (workspaceId && workspaceId !== 'all') {
       query = query.eq('workspace_id', workspaceId);
@@ -1524,23 +1488,205 @@ export async function fetchPartnerAlbumOrders(workspaceId: string, partnerId: st
 
     const { data, error } = await query.order('order_date', { ascending: false });
 
-    if (!error && data && data.length > 0) {
-      if (typeof window !== 'undefined') {
-        localStorage.setItem(`${LS_ALBUMS_KEY}${workspaceId}_${partnerId}`, JSON.stringify(data));
-      }
-      return data as PartnerAlbumOrder[];
+    if (!error && Array.isArray(data)) {
+      data.forEach((o: any) => {
+        const isMatch = (
+          (o.partner_id && o.partner_id === partnerId) ||
+          (partnerName && o.partner_name && o.partner_name.toLowerCase().trim() === partnerName.toLowerCase().trim()) ||
+          (partnerEmail && o.partner_email && o.partner_email.toLowerCase().trim() === partnerEmail.toLowerCase().trim())
+        );
+        if (isMatch && !seenIds.has(o.id)) {
+          seenIds.add(o.id);
+          const cat = o.category || (o.service_type?.includes('Print') ? 'album_printing' : 'album_design');
+          resultOrders.push({
+            ...o,
+            category: cat,
+            role: o.role || (cat === 'album_design' ? 'Album Designer' : 'Printing Lab & Partner'),
+          });
+        }
+      });
     }
   } catch (err) {
     console.warn('[team-finance-sync] DB fetchPartnerAlbumOrders error:', err);
   }
 
-  if (typeof window !== 'undefined') {
-    const local = localStorage.getItem(`${LS_ALBUMS_KEY}${workspaceId}_${partnerId}`);
-    if (local) {
-      try { return JSON.parse(local); } catch (_) {}
+  // Live Auto-Sync: Query post_production_deliverables for albums assigned to this person
+  try {
+    let delivQuery = supabase
+      .from('post_production_deliverables')
+      .select('*');
+
+    if (partnerId) {
+      const nameFilter = partnerName ? `,assigned_to.ilike.%${partnerName}%,printer_name.ilike.%${partnerName}%` : '';
+      delivQuery = delivQuery.or(`assigned_member_id.eq.${partnerId},printer_id.eq.${partnerId}${nameFilter}`);
     }
+
+    if (workspaceId && workspaceId !== 'all') {
+      delivQuery = delivQuery.or(`workspace_id.eq.${workspaceId},user_id.eq.${workspaceId}`);
+    }
+
+    const { data: deliverables, error: delivErr } = await delivQuery;
+
+    if (!delivErr && Array.isArray(deliverables) && deliverables.length > 0) {
+      const projectIds = [...new Set(deliverables.map((d: any) => d.project_id).filter(Boolean))];
+      const projectClientMap = new Map<string, string>();
+
+      if (projectIds.length > 0) {
+        try {
+          const { data: projects } = await supabase
+            .from('post_production_projects')
+            .select('id, client_id, deliverables')
+            .in('id', projectIds);
+
+          const clientIds = [...new Set((projects || []).map((p: any) => p.client_id).filter(Boolean))];
+          if (clientIds.length > 0) {
+            const { data: clients } = await supabase
+              .from('workspace_clients')
+              .select('id, name')
+              .in('id', clientIds);
+
+            const cMap = new Map<string, string>();
+            (clients || []).forEach((c: any) => cMap.set(c.id, c.name));
+
+            (projects || []).forEach((p: any) => {
+              if (cMap.has(p.client_id)) {
+                projectClientMap.set(p.id, cMap.get(p.client_id)!);
+              }
+            });
+          }
+        } catch (_) {}
+      }
+
+      for (const d of deliverables) {
+        const isAlbum = /album|book|print|sheet/i.test(`${d.category || ''} ${d.title || ''}`);
+        if (!isAlbum) continue;
+
+        const clientName = projectClientMap.get(d.project_id) || (d as any).client_name || 'Client Project';
+        const rawSpecs = String(d.specs || d.count || '').trim();
+        const sheetCount = parseInt(rawSpecs.replace(/\D/g, '')) || 30;
+
+        // A. Member is Designer
+        const isDesigner = (
+          (d.assigned_member_id && d.assigned_member_id === partnerId) ||
+          (partnerName && d.assigned_to && d.assigned_to.toLowerCase().trim() === partnerName.toLowerCase().trim())
+        );
+        if (isDesigner) {
+          const designOrderId = `order_design_${d.id}`;
+          const existingIdx = resultOrders.findIndex(o => o.deliverable_id === d.id && o.category === 'album_design');
+          const total = Number(d.agreed_amount) || 0;
+          const paid = Number(d.paid_amount) || 0;
+          const bal = Math.max(0, total - paid);
+          const pStatus: 'PENDING' | 'PARTIAL' | 'PAID' = bal === 0 && total > 0 ? 'PAID' : paid > 0 ? 'PARTIAL' : 'PENDING';
+
+          const designOrder: PartnerAlbumOrder = {
+            id: designOrderId,
+            workspace_id: d.workspace_id || workspaceId,
+            partner_id: partnerId,
+            partner_name: d.assigned_to || partnerName || '',
+            client_name: clientName,
+            project_id: d.project_id || '',
+            deliverable_id: d.id,
+            category: 'album_design',
+            role: 'Album Designer',
+            album_type: d.title || 'Wedding Album',
+            sheet_count: sheetCount,
+            rate_per_sheet: sheetCount > 0 && total > 0 ? Math.round(total / sheetCount) : 0,
+            total_amount: total,
+            paid_amount: paid,
+            balance_amount: bal,
+            order_status: d.status || 'Pending',
+            payment_status: pStatus,
+            order_date: d.created_at ? d.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
+            due_date: d.due_date || d.deadline || '',
+            delivery_date: d.due_date || d.deadline || '',
+            notes: d.notes || '',
+            updated_at: d.updated_at || new Date().toISOString(),
+          };
+
+          if (existingIdx >= 0) {
+            resultOrders[existingIdx] = {
+              ...resultOrders[existingIdx],
+              ...designOrder,
+              total_amount: designOrder.total_amount || resultOrders[existingIdx].total_amount,
+              paid_amount: Math.max(designOrder.paid_amount, resultOrders[existingIdx].paid_amount),
+              balance_amount: Math.max(0, (designOrder.total_amount || resultOrders[existingIdx].total_amount) - Math.max(designOrder.paid_amount, resultOrders[existingIdx].paid_amount)),
+            };
+          } else if (!seenIds.has(designOrderId)) {
+            seenIds.add(designOrderId);
+            resultOrders.push(designOrder);
+          }
+        }
+
+        // B. Member is Printer / Lab
+        const isPrinter = (
+          (d.printer_id && d.printer_id === partnerId) ||
+          (partnerName && d.printer_name && d.printer_name.toLowerCase().trim() === partnerName.toLowerCase().trim())
+        );
+        if (isPrinter) {
+          const printOrderId = `order_print_${d.id}`;
+          const existingIdx = resultOrders.findIndex(o => o.deliverable_id === d.id && o.category === 'album_printing');
+          const total = Number(d.printing_agreed_amount) || 0;
+          const paid = Number(d.printing_paid_amount) || 0;
+          const bal = Math.max(0, total - paid);
+          const pStatus: 'PENDING' | 'PARTIAL' | 'PAID' = bal === 0 && total > 0 ? 'PAID' : paid > 0 ? 'PARTIAL' : 'PENDING';
+
+          const printOrder: PartnerAlbumOrder = {
+            id: printOrderId,
+            workspace_id: d.workspace_id || workspaceId,
+            partner_id: partnerId,
+            partner_name: d.printer_name || partnerName || '',
+            client_name: clientName,
+            project_id: d.project_id || '',
+            deliverable_id: d.id,
+            category: 'album_printing',
+            role: 'Printing Lab & Partner',
+            album_type: d.title || 'Wedding Album',
+            sheet_count: sheetCount,
+            rate_per_sheet: sheetCount > 0 && total > 0 ? Math.round(total / sheetCount) : 0,
+            total_amount: total,
+            paid_amount: paid,
+            balance_amount: bal,
+            order_status: d.printing_status || 'Pending',
+            payment_status: pStatus,
+            order_date: d.created_at ? d.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
+            due_date: d.printing_due_date || d.printing_deadline || '',
+            delivery_date: d.printing_due_date || d.printing_deadline || '',
+            notes: d.notes || '',
+            updated_at: d.updated_at || new Date().toISOString(),
+          };
+
+          if (existingIdx >= 0) {
+            resultOrders[existingIdx] = {
+              ...resultOrders[existingIdx],
+              ...printOrder,
+              total_amount: printOrder.total_amount || resultOrders[existingIdx].total_amount,
+              paid_amount: Math.max(printOrder.paid_amount, resultOrders[existingIdx].paid_amount),
+              balance_amount: Math.max(0, (printOrder.total_amount || resultOrders[existingIdx].total_amount) - Math.max(printOrder.paid_amount, resultOrders[existingIdx].paid_amount)),
+            };
+          } else if (!seenIds.has(printOrderId)) {
+            seenIds.add(printOrderId);
+            resultOrders.push(printOrder);
+          }
+        }
+      }
+    }
+  } catch (syncErr) {
+    console.warn('[team-finance-sync] post_production_deliverables sync error:', syncErr);
   }
-  return [];
+
+  // Strict ownership filter: strictly verify every order belongs to this partner
+  const strictlyAssigned = resultOrders.filter(o => {
+    if (o.partner_id && o.partner_id === partnerId) return true;
+    if (partnerName && o.partner_name && o.partner_name.toLowerCase().trim() === partnerName.toLowerCase().trim()) return true;
+    if (partnerEmail && (o as any).partner_email && (o as any).partner_email.toLowerCase().trim() === partnerEmail.toLowerCase().trim()) return true;
+    return false;
+  });
+
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(`${LS_ALBUMS_KEY}${workspaceId}_${partnerId}`, JSON.stringify(strictlyAssigned));
+  }
+
+  return strictlyAssigned;
 }
 
 export async function savePartnerAlbumOrder(
@@ -1575,6 +1721,29 @@ export async function savePartnerAlbumOrder(
 
   try {
     await supabase.from('partner_album_orders').upsert(payload);
+
+    // Sync back to post_production_deliverables if linked
+    const delivId = orderData.deliverable_id || (typeof payload.id === 'string' && (payload.id.startsWith('order_print_') || payload.id.startsWith('order_design_')) ? payload.id.replace(/^order_(?:print|design)_/, '') : '');
+    if (delivId) {
+      const isPrint = payload.category === 'album_printing' || (typeof payload.id === 'string' && payload.id.startsWith('order_print_'));
+      if (isPrint) {
+        await supabase.from('post_production_deliverables').update({
+          printing_status: payload.order_status,
+          printing_agreed_amount: total,
+          printing_paid_amount: paid,
+          printing_balance_amount: balance,
+          updated_at: new Date().toISOString()
+        }).eq('id', delivId);
+      } else {
+        await supabase.from('post_production_deliverables').update({
+          status: payload.order_status,
+          agreed_amount: total,
+          paid_amount: paid,
+          balance_amount: balance,
+          updated_at: new Date().toISOString()
+        }).eq('id', delivId);
+      }
+    }
   } catch (err) {
     console.warn('[team-finance-sync] DB savePartnerAlbumOrder error:', err);
   }
@@ -1644,6 +1813,25 @@ export async function recordAlbumOrderPayment(
           payment_status: newStatus,
           updated_at: updatedOrder.updated_at
         }).eq('id', orderId);
+
+        // Bi-directional sync back to post_production_deliverables
+        const delivId = existingOrder.deliverable_id || (typeof orderId === 'string' && (orderId.startsWith('order_print_') || orderId.startsWith('order_design_')) ? orderId.replace(/^order_(?:print|design)_/, '') : '');
+        if (delivId) {
+          const isPrint = (existingOrder as any).category === 'album_printing' || (typeof orderId === 'string' && orderId.startsWith('order_print_'));
+          if (isPrint) {
+            await supabase.from('post_production_deliverables').update({
+              printing_paid_amount: newPaid,
+              printing_balance_amount: newBalance,
+              updated_at: updatedOrder.updated_at
+            }).eq('id', delivId);
+          } else {
+            await supabase.from('post_production_deliverables').update({
+              paid_amount: newPaid,
+              balance_amount: newBalance,
+              updated_at: updatedOrder.updated_at
+            }).eq('id', delivId);
+          }
+        }
       } catch (_) {}
 
       if (payment.autoCreateExpense !== false) {
@@ -2478,7 +2666,7 @@ export async function fetchWorkspaceAllTeamAggregateFinancials(
         nameToIdMap.set(m.name.trim().toLowerCase(), m.id);
       }
       if (m.id) {
-        const isIH = m.primary_type === 'IN_HOUSE' || 
+        const isIH = (m as any).primary_type === 'IN_HOUSE' || 
           m.member_types?.includes('IN_HOUSE') || 
           (m as any).payout_frequency === 'monthly' || 
           (m as any).type === 'in-house';

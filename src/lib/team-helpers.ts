@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { getRoleShortCode, parseRoleAndNumber, formatRoleWithNumber, isRoleMatching } from '@/lib/workspace-settings';
+import { parseClientExtended, serializeClientExtended } from '@/components/clients/client-insider-modal';
 
 export interface WorkspaceMemberOption {
   id: string;
@@ -55,6 +56,34 @@ export function isOwnerMember(m: any): boolean {
 }
 
 /**
+ * Strict check if a team member is an External Vendor, Printing Lab, or Partner.
+ * Vendors must NEVER be lumped under In-House.
+ */
+export function isVendorMember(m: any): boolean {
+  if (!m) return false;
+  if (isOwnerMember(m)) return false;
+  
+  const primaryType = String(m.primary_type || m.type || m.member_type || '').toUpperCase().trim();
+  const typesArr = (Array.isArray(m.member_types) ? m.member_types : []).map((t: any) => String(t).toUpperCase().trim());
+  
+  if (['PARTNER', 'VENDOR', 'LAB', 'EXT_VENDOR'].includes(primaryType)) {
+    return true;
+  }
+  if (typesArr.some(t => ['PARTNER', 'VENDOR', 'LAB', 'EXT_VENDOR'].includes(t))) {
+    return true;
+  }
+  if (m.is_partner === true || m.is_vendor === true) {
+    return true;
+  }
+
+  const roleStr = String(m.primary_role || m.role || '').toLowerCase();
+  if (/vendor|partner|lab|printing|press|album binder|album vendor/i.test(roleStr)) {
+    return true;
+  }
+  return false;
+}
+
+/**
  * Strict check if a team member is an In-House staff member.
  * Explicitly rejects Freelancers, External Vendors, and Partners.
  * Studio Owner is ALWAYS classified as In-House.
@@ -69,10 +98,14 @@ export function isInHouseMember(m: any): boolean {
   if (isOwnerMember(m)) {
     return true;
   }
-  const primaryType = String(m.primary_type || m.type || '').toUpperCase().trim();
+  // Vendors and Partners must NEVER be classified as In-House
+  if (isVendorMember(m)) {
+    return false;
+  }
+  const primaryType = String(m.primary_type || m.type || m.member_type || '').toUpperCase().trim();
   const typesArr = (Array.isArray(m.member_types) ? m.member_types : []).map((t: any) => String(t).toUpperCase().trim());
   
-  if (primaryType === 'FREELANCER' || primaryType === 'PARTNER' || primaryType === 'VENDOR' || primaryType === 'EXT_VENDOR' || typesArr.includes('FREELANCER')) {
+  if (primaryType === 'FREELANCER' || typesArr.includes('FREELANCER')) {
     return false;
   }
   if (
@@ -87,7 +120,7 @@ export function isInHouseMember(m: any): boolean {
   if (typesArr.includes('IN_HOUSE') || typesArr.includes('INHOUSE') || typesArr.includes('STAFF')) {
     return true;
   }
-  if (m.is_inhouse === true || m.is_in_house === true) {
+  if (m.is_inhouse === true || m.is_in_house === true || m.isInHouse === true) {
     return true;
   }
   if (m.payout_frequency === 'monthly' && primaryType !== 'FREELANCER') {
@@ -232,16 +265,19 @@ export function getDedupedInHouseMembers<T = any>(members: T[]): T[] {
 /**
  * Groups and deduplicates all workspace members into:
  * 1. inHouse (In-House Staff & Studio Owners) - Studio Owner ALWAYS at index 0 (top)
- * 2. freelancers (External Vendors, Freelancers, Contractors)
- * Both cleanly deduplicated with zero ghost records.
+ * 2. freelancers (Freelance Specialists & Contractors)
+ * 3. vendors (External Vendors, Printing Labs & Partners)
+ * All cleanly deduplicated with zero ghost records.
  */
 export function getGroupedTeamMembers<T = any>(members: T[]): {
   inHouse: T[];
   freelancers: T[];
+  vendors: T[];
   allDeduped: T[];
 } {
   const inHouseMap = new Map<string, T>();
   const freelancerMap = new Map<string, T>();
+  const vendorMap = new Map<string, T>();
 
   (members || []).forEach((m: any) => {
     const rawName = String(m.name || '').trim();
@@ -252,26 +288,30 @@ export function getGroupedTeamMembers<T = any>(members: T[]): {
     const lookupKey = norm || emailNorm;
     if (!lookupKey) return;
 
-    if (isInHouseMember(m)) {
-      if (!inHouseMap.has(lookupKey)) {
-        inHouseMap.set(lookupKey, m);
-      } else {
-        inHouseMap.set(lookupKey, mergeMemberRecords(inHouseMap.get(lookupKey), m));
-      }
+    if (isOwnerMember(m)) {
+      if (!inHouseMap.has(lookupKey)) inHouseMap.set(lookupKey, m);
+      else inHouseMap.set(lookupKey, mergeMemberRecords(inHouseMap.get(lookupKey), m));
+    } else if (isVendorMember(m)) {
+      if (!vendorMap.has(lookupKey)) vendorMap.set(lookupKey, m);
+      else vendorMap.set(lookupKey, mergeMemberRecords(vendorMap.get(lookupKey), m));
+    } else if (isInHouseMember(m)) {
+      if (!inHouseMap.has(lookupKey)) inHouseMap.set(lookupKey, m);
+      else inHouseMap.set(lookupKey, mergeMemberRecords(inHouseMap.get(lookupKey), m));
     } else {
-      if (!freelancerMap.has(lookupKey)) {
-        freelancerMap.set(lookupKey, m);
-      } else {
-        freelancerMap.set(lookupKey, mergeMemberRecords(freelancerMap.get(lookupKey), m));
-      }
+      if (!freelancerMap.has(lookupKey)) freelancerMap.set(lookupKey, m);
+      else freelancerMap.set(lookupKey, mergeMemberRecords(freelancerMap.get(lookupKey), m));
     }
   });
 
-  // If a member exists in both (e.g. owner listed as freelancer in old stub), prioritize inHouse
+  // Strict deduplication & cross-list resolution:
+  // In-House takes precedence over freelancer & vendor
   for (const key of inHouseMap.keys()) {
-    if (freelancerMap.has(key)) {
-      freelancerMap.delete(key);
-    }
+    freelancerMap.delete(key);
+    vendorMap.delete(key);
+  }
+  // Vendor takes precedence over freelancer
+  for (const key of vendorMap.keys()) {
+    freelancerMap.delete(key);
   }
 
   const inHouse = Array.from(inHouseMap.values()).sort((a: any, b: any) => {
@@ -284,11 +324,15 @@ export function getGroupedTeamMembers<T = any>(members: T[]): {
   const freelancers = Array.from(freelancerMap.values()).sort((a: any, b: any) =>
     String(a.name || '').localeCompare(String(b.name || ''))
   );
+  const vendors = Array.from(vendorMap.values()).sort((a: any, b: any) =>
+    String(a.name || '').localeCompare(String(b.name || ''))
+  );
 
   return {
     inHouse,
     freelancers,
-    allDeduped: [...inHouse, ...freelancers],
+    vendors,
+    allDeduped: [...inHouse, ...freelancers, ...vendors],
   };
 }
 
@@ -772,3 +816,33 @@ export function matchDateQuery(rawQuery: string, dateStr?: string | null): boole
   return true;
 }
 
+/**
+ * ⚡ Bidirectional PM Assignment for Bookings & Events
+ * Updates fw_projects and concurrently pushes to workspace_clients
+ */
+export const handleUpdateBookingPM = async (
+  projectId: string,
+  clientId: string | null,
+  clientName: string,
+  member: any | null
+) => {
+  const { authFetchJson } = await import('@/lib/client-auth-fetch');
+  const pmId = member ? member.id : null;
+  const pmName = member ? member.name : null;
+  const activeWsId = typeof window !== 'undefined' ? localStorage.getItem('sc_active_workspace_id') : null;
+
+  await authFetchJson('/api/workspace/sync-card', {
+    method: 'POST',
+    body: JSON.stringify({
+      action: 'assign_pm',
+      projectId,
+      clientId,
+      clientName,
+      pmId,
+      pmName,
+      pmEmail: member?.email || null,
+      pmPhone: member?.phone_number || member?.phone || null,
+      workspaceId: activeWsId || undefined,
+    }),
+  });
+};

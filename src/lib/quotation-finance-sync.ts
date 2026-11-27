@@ -986,21 +986,45 @@ export async function syncQuotationToTeamManagerEvents(
           .eq('id', targetProjectId)
       ]);
     } else if (allowCreateNewProject) {
+      let wcPmId: string | null = null;
+      let wcPmName: string | null = null;
+      if (clientId) {
+        try {
+          const { data: wcPm } = await supabaseClient
+            .from('workspace_clients')
+            .select('project_manager_id, project_manager_name')
+            .eq('id', clientId)
+            .maybeSingle();
+          wcPmId = wcPm?.project_manager_id || null;
+          wcPmName = wcPm?.project_manager_name || null;
+        } catch (_) {}
+      }
+      const fpPayload: any = {
+        client_name: clientName.trim(),
+        client_id: clientId || null,
+        main_date: firstSubEventDate,
+        main_venue: firstSubEventVenue,
+        user_id: workspaceId,
+        status: 'active',
+        ...(wcPmName ? { project_manager_name: wcPmName } : {}),
+        ...(wcPmId ? { project_manager_id: wcPmId } : {}),
+      };
       const { data: newProj, error: projErr } = await supabaseClient
         .from('fw_projects')
-        .insert([{
-          client_name: clientName.trim(),
-          client_id: clientId || null,
-          main_date: firstSubEventDate,
-          main_venue: firstSubEventVenue,
-          user_id: workspaceId,
-          status: 'active'
-        }])
+        .insert([fpPayload])
         .select()
         .single();
 
-      if (projErr) throw projErr;
-      if (newProj) targetProjectId = newProj.id;
+      if (projErr && projErr.code === '42804' && 'project_manager_id' in fpPayload) {
+        delete fpPayload.project_manager_id;
+        const { data: fbProj, error: fbErr } = await supabaseClient.from('fw_projects').insert([fpPayload]).select().single();
+        if (fbErr) throw fbErr;
+        if (fbProj) targetProjectId = fbProj.id;
+      } else if (projErr) {
+        throw projErr;
+      } else if (newProj) {
+        targetProjectId = newProj.id;
+      }
     } else {
       return null;
     }
@@ -1806,19 +1830,41 @@ export async function syncBookedLeadOrFinalQuotation({
               }
 
               if (!existingProjs || existingProjs.length === 0) {
-                const { data: createdProj } = await supabaseClient
+                let wcPmId: string | null = null;
+                let wcPmName: string | null = null;
+                if (workspaceClientId) {
+                  try {
+                    const { data: wcPm } = await supabaseClient
+                      .from('workspace_clients')
+                      .select('project_manager_id, project_manager_name')
+                      .eq('id', workspaceClientId)
+                      .maybeSingle();
+                    wcPmId = wcPm?.project_manager_id || null;
+                    wcPmName = wcPm?.project_manager_name || null;
+                  } catch (_) {}
+                }
+                const fpIns: any = {
+                  client_name: coupleName.trim(),
+                  client_id: workspaceClientId || null,
+                  main_date: eventDate || now.split('T')[0],
+                  main_venue: (mainVenue && String(mainVenue).trim()) ? String(mainVenue).trim() : 'Studio Venue / TBD',
+                  user_id: workspaceId,
+                  status: 'active',
+                  ...(wcPmName ? { project_manager_name: wcPmName } : {}),
+                  ...(wcPmId ? { project_manager_id: wcPmId } : {}),
+                };
+                const { data: createdProj, error: createdErr } = await supabaseClient
                   .from('fw_projects')
-                  .insert([{
-                    client_name: coupleName.trim(),
-                    client_id: workspaceClientId || null,
-                    main_date: eventDate || now.split('T')[0],
-                    main_venue: (mainVenue && String(mainVenue).trim()) ? String(mainVenue).trim() : 'Studio Venue / TBD',
-                    user_id: workspaceId,
-                    status: 'active'
-                  }])
+                  .insert([fpIns])
                   .select('id')
-                  .single();
-                targetProjectId = createdProj?.id || null;
+                  .maybeSingle();
+                if (createdErr && createdErr.code === '42804' && 'project_manager_id' in fpIns) {
+                  delete fpIns.project_manager_id;
+                  const { data: fbProj } = await supabaseClient.from('fw_projects').insert([fpIns]).select('id').maybeSingle();
+                  targetProjectId = fbProj?.id || null;
+                } else {
+                  targetProjectId = createdProj?.id || null;
+                }
               } else {
                 targetProjectId = existingProjs[0].id;
                 await supabaseClient

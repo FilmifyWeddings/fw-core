@@ -57,10 +57,25 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const results = (workflows || []).map(wf => ({
-      ...wf,
-      execution_count: countsMap[wf.id] ? countsMap[wf.id].size : 0
-    }));
+    const results = (workflows || []).map(wf => {
+      let mappedTargetGroup = wf.target_group_id;
+      if (!mappedTargetGroup) {
+        const steps = Array.isArray(wf.workflow_steps) ? wf.workflow_steps : [];
+        const isSelection = steps.some((s: any) => 
+          s.trigger_event === 'client_selection_submitted' || 
+          s.trigger === 'client_selection_submitted' ||
+          s.target_group_name === 'Album Selection'
+        ) || wf.workflow_name?.toLowerCase().includes('selection');
+        if (isSelection) {
+          mappedTargetGroup = 'client_selection_submitted';
+        }
+      }
+      return {
+        ...wf,
+        target_group_id: mappedTargetGroup,
+        execution_count: countsMap[wf.id] ? countsMap[wf.id].size : 0
+      };
+    });
 
     const TOTAL_MONTHLY_QUOTA = 5000;
     const monthlySent = monthlyCountRes.count ?? 0;
@@ -99,13 +114,23 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing workflow_name parameter' }, { status: 400 });
     }
 
+    const isSelectionTrigger = target_group_id === 'client_selection_submitted';
+    const sanitizedTargetGroupId = isSelectionTrigger ? null : (target_group_id || null);
+
+    const stepsToSave = Array.isArray(workflow_steps) ? workflow_steps.map((s: any) => {
+      if (isSelectionTrigger) {
+        return { ...s, trigger_event: 'client_selection_submitted' };
+      }
+      return s;
+    }) : [];
+
     const { data: workflow, error } = await supabaseAdmin
       .from('whatsapp_custom_workflows')
       .insert({
         tenant_id: tenantId,
         workflow_name,
-        target_group_id: target_group_id || null,
-        workflow_steps: workflow_steps || [],
+        target_group_id: sanitizedTargetGroupId,
+        workflow_steps: stepsToSave,
         status: status || 'Active'
       })
       .select()
@@ -115,7 +140,10 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      workflow
+      workflow: {
+        ...workflow,
+        target_group_id: isSelectionTrigger ? 'client_selection_submitted' : workflow.target_group_id
+      }
     });
   } catch (err: any) {
     console.error('Create custom workflow error:', err);
@@ -136,11 +164,49 @@ export async function PATCH(req: NextRequest) {
   try {
     const body = await req.json();
     const { workflow_name, target_group_id, workflow_steps, execution_count, status } = body;
+    const isSelectionTrigger = target_group_id === 'client_selection_submitted';
+    const isLocalId = workflowId.startsWith('local-workflow-');
+
+    if (isLocalId) {
+      // Self-healing: If frontend is trying to update a local fallback ID, insert it cleanly into PostgreSQL!
+      const sanitizedTargetGroupId = isSelectionTrigger ? null : (target_group_id || null);
+      const stepsToSave = Array.isArray(workflow_steps) ? workflow_steps.map((s: any) => {
+        if (isSelectionTrigger) return { ...s, trigger_event: 'client_selection_submitted' };
+        return s;
+      }) : [];
+
+      const { data: createdWf, error: createErr } = await supabaseAdmin
+        .from('whatsapp_custom_workflows')
+        .insert({
+          tenant_id: tenantId,
+          workflow_name: workflow_name || 'Album Selection Alert',
+          target_group_id: sanitizedTargetGroupId,
+          workflow_steps: stepsToSave,
+          status: status || 'Active'
+        })
+        .select()
+        .single();
+
+      if (createErr) throw createErr;
+      return NextResponse.json({
+        success: true,
+        workflow: {
+          ...createdWf,
+          target_group_id: isSelectionTrigger ? 'client_selection_submitted' : createdWf.target_group_id
+        }
+      });
+    }
 
     const updates: any = {};
     if (workflow_name !== undefined) updates.workflow_name = workflow_name;
-    if (target_group_id !== undefined) updates.target_group_id = target_group_id;
-    if (workflow_steps !== undefined) updates.workflow_steps = workflow_steps;
+    if (target_group_id !== undefined) {
+      updates.target_group_id = isSelectionTrigger ? null : target_group_id;
+    }
+    if (workflow_steps !== undefined) {
+      updates.workflow_steps = Array.isArray(workflow_steps) && isSelectionTrigger
+        ? workflow_steps.map((s: any) => ({ ...s, trigger_event: 'client_selection_submitted' }))
+        : workflow_steps;
+    }
     if (execution_count !== undefined) updates.execution_count = execution_count;
     if (status !== undefined) updates.status = status;
 
@@ -155,6 +221,16 @@ export async function PATCH(req: NextRequest) {
       .single();
 
     if (error) throw error;
+
+    return NextResponse.json({
+      success: true,
+      workflow: {
+        ...workflow,
+        target_group_id: (isSelectionTrigger || (!workflow.target_group_id && workflow.workflow_steps?.some?.((s: any) => s.trigger_event === 'client_selection_submitted')))
+          ? 'client_selection_submitted'
+          : workflow.target_group_id
+      }
+    });
 
     // If workflow was set to Inactive, cancel all pending queue tasks and logs immediately!
     if (status === 'Inactive') {

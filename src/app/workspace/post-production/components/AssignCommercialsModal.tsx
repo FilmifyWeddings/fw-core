@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   X, UserCheck, IndianRupee, Calendar, Check, Zap, 
-  CreditCard, Sparkles, User, AlertCircle 
+  CreditCard, Sparkles, User, AlertCircle, Printer, Palette
 } from 'lucide-react';
 import { PostProductionDeliverable } from './DeliverableCategorySection';
 import { getMemberDisplayRole } from '@/lib/team-helpers';
@@ -15,6 +15,7 @@ interface AssignCommercialsModalProps {
   onClose: () => void;
   deliverable: PostProductionDeliverable | null;
   clientName: string;
+  targetRole?: 'editor' | 'designer' | 'printer';
   teamMembers: Array<{ 
     id: string; 
     name: string; 
@@ -34,6 +35,7 @@ interface AssignCommercialsModalProps {
     payMode?: 'UPI' | 'Bank Transfer' | 'Cash';
     payRef?: string;
     notes?: string;
+    targetRole?: 'editor' | 'designer' | 'printer';
   }) => Promise<void> | void;
 }
 
@@ -42,6 +44,7 @@ export default function AssignCommercialsModal({
   onClose,
   deliverable,
   clientName,
+  targetRole = 'editor',
   teamMembers,
   onSaveAssignment,
 }: AssignCommercialsModalProps) {
@@ -54,38 +57,49 @@ export default function AssignCommercialsModal({
   const [notes, setNotes] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const isPrinter = targetRole === 'printer';
+  const isDesigner = targetRole === 'designer';
+
   useEffect(() => {
     if (isOpen && deliverable) {
-      const initialId = deliverable.assigned_member_id || '';
-      setSelectedMemberId(initialId);
-
-      // Default agreed amount is strictly 0 unless already set on the deliverable
-      if (deliverable.agreed_amount !== undefined && deliverable.agreed_amount !== null && !isNaN(Number(deliverable.agreed_amount))) {
-        setAgreedAmount(String(deliverable.agreed_amount));
+      if (isPrinter) {
+        setSelectedMemberId(deliverable.printer_id || '');
+        setAgreedAmount(String(deliverable.printing_agreed_amount || 0));
+        setPaidAmount(String(deliverable.printing_paid_amount || 0));
+        const pDue = deliverable.printing_due_date || deliverable.printing_deadline || '';
+        setDueDate(pDue || new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
       } else {
-        setAgreedAmount('0');
-      }
-      setPaidAmount(deliverable.paid_amount !== undefined && deliverable.paid_amount !== null ? String(deliverable.paid_amount) : '0');
-      
-      const due = deliverable.due_date || deliverable.deadline || '';
-      if (due) {
-        try {
-          const d = new Date(due);
-          if (!isNaN(d.getTime())) {
-            setDueDate(d.toISOString().split('T')[0]);
-          } else {
+        const initialId = deliverable.assigned_member_id || '';
+        setSelectedMemberId(initialId);
+
+        // Default agreed amount is strictly 0 unless already set on the deliverable
+        if (deliverable.agreed_amount !== undefined && deliverable.agreed_amount !== null && !isNaN(Number(deliverable.agreed_amount))) {
+          setAgreedAmount(String(deliverable.agreed_amount));
+        } else {
+          setAgreedAmount('0');
+        }
+        setPaidAmount(deliverable.paid_amount !== undefined && deliverable.paid_amount !== null ? String(deliverable.paid_amount) : '0');
+        
+        const due = deliverable.due_date || deliverable.deadline || '';
+        if (due) {
+          try {
+            const d = new Date(due);
+            if (!isNaN(d.getTime())) {
+              setDueDate(d.toISOString().split('T')[0]);
+            } else {
+              setDueDate(due);
+            }
+          } catch (_) {
             setDueDate(due);
           }
-        } catch (_) {
-          setDueDate(due);
+        } else {
+          setDueDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
         }
-      } else {
-        setDueDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
       }
 
       setNotes(deliverable.notes || '');
     }
-  }, [isOpen, deliverable, teamMembers]);
+  }, [isOpen, deliverable, teamMembers, isPrinter]);
 
   if (!isOpen || !deliverable) return null;
 
@@ -124,6 +138,7 @@ export default function AssignCommercialsModal({
         payMode,
         payRef: payRef.trim(),
         notes: notes.trim(),
+        targetRole,
       });
       onClose();
     } finally {
@@ -151,12 +166,24 @@ export default function AssignCommercialsModal({
           {/* Header */}
           <div className="p-4 sm:p-5 bg-white border-b border-amber-200/80 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <div className="w-10 h-10 rounded-2xl bg-amber-100 border border-amber-300 text-amber-900 flex items-center justify-center shadow-2xs">
-                <UserCheck className="w-5 h-5" />
+              <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shadow-2xs ${
+                isPrinter
+                  ? 'bg-purple-100 border border-purple-300 text-purple-900'
+                  : isDesigner
+                  ? 'bg-amber-100 border border-amber-300 text-amber-900'
+                  : 'bg-amber-100 border border-amber-300 text-amber-900'
+              }`}>
+                {isPrinter ? <Printer className="w-5 h-5" /> : isDesigner ? <Palette className="w-5 h-5" /> : <UserCheck className="w-5 h-5" />}
               </div>
               <div>
                 <h3 className="text-base font-black text-stone-900 flex items-center gap-2">
-                  <span>Assign Specialist &amp; Set Commercials</span>
+                  <span>
+                    {isPrinter
+                      ? 'Set Printing Lab Commercials'
+                      : isDesigner
+                      ? 'Set Album Designer Commercials'
+                      : 'Assign Specialist & Set Commercials'}
+                  </span>
                 </h3>
                 <p className="text-xs text-stone-500 font-medium truncate max-w-[280px] sm:max-w-md">
                   {deliverable.title} {deliverable.specs ? `(${deliverable.specs})` : ''} • {clientName}
@@ -178,8 +205,14 @@ export default function AssignCommercialsModal({
             {/* 1. Specialist Selector */}
             <div className="space-y-1.5">
               <label className="text-xs font-black uppercase tracking-wider text-stone-600 flex items-center gap-1.5">
-                <User className="w-3.5 h-3.5 text-amber-700" />
-                <span>Assign Editor / Specialist *</span>
+                {isPrinter ? <Printer className="w-3.5 h-3.5 text-purple-700" /> : <User className="w-3.5 h-3.5 text-amber-700" />}
+                <span>
+                  {isPrinter
+                    ? 'Assign Printing Lab / Partner *'
+                    : isDesigner
+                    ? 'Assign Album Designer *'
+                    : 'Assign Editor / Specialist *'}
+                </span>
               </label>
 
               <UnifiedTeamAssignDropdown
@@ -189,7 +222,13 @@ export default function AssignCommercialsModal({
                   setSelectedMemberId(m.id || '');
                 }}
                 variant="select-input"
-                placeholder="-- Choose Team Member / Freelancer --"
+                placeholder={
+                  isPrinter
+                    ? '-- Choose Printing Lab / Vendor --'
+                    : isDesigner
+                    ? '-- Choose Album Designer --'
+                    : '-- Choose Team Member / Freelancer --'
+                }
                 searchPlaceholder="Search team member..."
                 size="md"
                 allowClear

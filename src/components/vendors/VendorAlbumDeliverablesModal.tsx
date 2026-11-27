@@ -1049,8 +1049,8 @@ export default function VendorAlbumDeliverablesModal({
       shoot: orders.filter(o => o.category === 'shoot').length,
       video_editing: orders.filter(o => o.category === 'video_editing').length,
       photo_editing: orders.filter(o => o.category === 'photo_editing').length,
-      album_design: orders.filter(o => o.category === 'album_design' || (!o.category && !o.service_type?.includes('Print'))).length,
-      album_printing: orders.filter(o => o.category === 'album_printing' || o.service_type?.includes('Print')).length,
+      album_design: orders.filter(o => o.category === 'album_design').length,
+      album_printing: orders.filter(o => o.category === 'album_printing').length,
     };
   }, [orders]);
 
@@ -1074,19 +1074,20 @@ export default function VendorAlbumDeliverablesModal({
       tabs.push({ id: 'photo_editing', label: 'Photo Editing', icon: '✨', count: photoCount });
     }
 
+    // Album Designing: strictly visible ONLY if member has assigned album designing tasks
     const albumCount = categoryCounts.album_design;
-    if (albumCount > 0 || /album\s*design/i.test(vendor.primary_role || '')) {
+    if (albumCount > 0) {
       tabs.push({ id: 'album_design', label: 'Album Designing', icon: '🎨', count: albumCount });
     }
 
+    // Album Printing: strictly visible ONLY if member has assigned printing orders or is an explicit printing partner
     const printCount = categoryCounts.album_printing;
-    if (printCount > 0 || /print|lab|binding/i.test(vendor.primary_role || '') || isPartner) {
+    if (printCount > 0 || (isPartner && /print|lab|binding/i.test(vendor.primary_role || ''))) {
       tabs.push({ id: 'album_printing', label: 'Album Printing', icon: '📖', count: printCount });
     }
 
     if (tabs.length === 0) {
       tabs.push({ id: 'shoot', label: 'Shoots', icon: '📸', count: shootCount });
-      tabs.push({ id: 'album_printing', label: 'Album Printing', icon: '📖', count: printCount });
     }
 
     return tabs;

@@ -202,7 +202,8 @@ export async function GET(req: NextRequest) {
     for (const workflow of workflowsList) {
       const totalStepsCount = workflow.workflow_steps?.length || 0;
       // Isolate leads strictly to workflows they were enrolled in
-      const wfLeads = (workflow.target_group_id
+      const isSelectionTrigger = workflow.target_group_id === 'client_selection_submitted';
+      const wfLeads = (workflow.target_group_id && !isSelectionTrigger
         ? leads.filter(l => l.whatsapp_group_id === workflow.target_group_id)
         : leads
       ).filter(l => {
@@ -212,7 +213,7 @@ export async function GET(req: NextRequest) {
         if (Array.isArray(enrolledIds)) {
           return enrolledIds.includes(workflow.id);
         }
-        return true; // legacy fallback if enrolled_workflow_ids is not present
+        return !isSelectionTrigger; // legacy fallback if enrolled_workflow_ids is not present
       });
 
       for (const lead of wfLeads) {

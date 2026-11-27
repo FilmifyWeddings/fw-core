@@ -452,29 +452,13 @@ export default function ClientBookingEventsSection({
       ...(effectiveWsId ? { user_id: effectiveWsId } : {}),
     };
 
-    const linkedLead = (client as any).linkedLeadId || client.lead_id;
-    let newProj: any = null;
-
-    if (linkedLead) {
-      const resWithLead = await supabase
-        .from('fw_projects')
-        .insert([{ ...baseProjPayload, lead_id: linkedLead }])
-        .select('*')
-        .single();
-      if (!resWithLead.error && resWithLead.data) {
-        newProj = resWithLead.data;
-      }
-    }
-
-    if (!newProj) {
-      const { data: insertedProj, error: projErr } = await supabase
-        .from('fw_projects')
-        .insert([baseProjPayload])
-        .select('*')
-        .single();
-      if (projErr) throw projErr;
-      newProj = insertedProj;
-    }
+    const { data: insertedProj, error: projErr } = await supabase
+      .from('fw_projects')
+      .insert([baseProjPayload])
+      .select('*')
+      .single();
+    if (projErr) throw projErr;
+    const newProj = insertedProj;
 
     const createdSubEvents: FWSubEvent[] = [];
     const existingBlocks = sourceProj.fw_sub_events || [];
@@ -839,49 +823,7 @@ export default function ClientBookingEventsSection({
           }).catch(() => {});
 
           try {
-            const cleanAssignId = String(assignmentId || '');
-            if (cleanAssignId && !cleanAssignId.includes('-role-')) {
-              await supabase
-                .from('fw_assignments')
-                .update({
-                  assigned_member_id: null,
-                  assigned_member_name: null,
-                  assigned_member_phone: null,
-                  agreed_amount: 0,
-                  advance_amount: 0,
-                  paid_amount: 0,
-                  balance_amount: 0,
-                  status: 'pending',
-                  payment_status: 'pending',
-                  notes: null,
-                })
-                .eq('id', cleanAssignId);
-            } else if (activeAssign.sub_event_id) {
-              let q = supabase
-                .from('fw_assignments')
-                .update({
-                  assigned_member_id: null,
-                  assigned_member_name: null,
-                  assigned_member_phone: null,
-                  agreed_amount: 0,
-                  advance_amount: 0,
-                  paid_amount: 0,
-                  balance_amount: 0,
-                  status: 'pending',
-                  payment_status: 'pending',
-                  notes: null,
-                })
-                .eq('sub_event_id', activeAssign.sub_event_id);
-
-              if (activeAssign.assigned_member_id) {
-                q = q.eq('assigned_member_id', activeAssign.assigned_member_id);
-              } else if (activeAssign.required_role) {
-                q = q.eq('required_role', activeAssign.required_role);
-              }
-              await q;
-            }
-
-            await unassignCrewSlot({
+            const unres = await unassignCrewSlot({
               workspaceId: effectiveWsId,
               eventId: displayProject.id,
               subEventId: activeAssign.sub_event_id || undefined,
@@ -890,8 +832,12 @@ export default function ClientBookingEventsSection({
               roleName: activeAssign.required_role,
               teamMemberId: activeAssign.assigned_member_id || undefined,
             });
-          } catch (err) {
+            if (!unres?.success) {
+              alert('Failed to unassign crew member: ' + (unres?.error || 'Please try again.'));
+            }
+          } catch (err: any) {
             console.error('[ClientBookingEvents] Unassign error:', err);
+            alert('Failed to unassign crew member: ' + (err?.message || 'Please try again.'));
           }
           emitWorkspaceSyncEvents();
         }

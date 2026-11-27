@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import fs from 'fs';
 import path from 'path';
+import { sendClientSelectionSubmittedEmail } from '@/lib/email-service';
 
 export const dynamic = 'force-dynamic';
 
@@ -402,6 +403,19 @@ export async function POST(req: NextRequest) {
     }
 
     const isSubmitted = is_submitted !== undefined ? Boolean(is_submitted) : existingSubmitted;
+    const submissionTimestamp = isSubmitted ? (existingSubmittedAt || new Date().toISOString()) : null;
+
+    // Trigger instant email & WhatsApp notifications on submission
+    if (is_submitted === true || (isSubmitted && !existingSubmitted)) {
+      dispatchSelectionNotifications({
+        galleryId: gallery_id,
+        clientName: cleanName,
+        clientEmail: normalizedEmail,
+        selectedPhotoCount: photoIds.length,
+        maxLimit: limit,
+        submittedAt: submissionTimestamp || new Date().toISOString(),
+      }).catch((e) => console.warn('[SelectionNotify] Error dispatching notifications:', e));
+    }
 
     // Always mirror to fallback cache for instantaneous resilience
     writeFallback(gallery_id, normalizedEmail, {
@@ -412,7 +426,7 @@ export async function POST(req: NextRequest) {
       max_limit: limit,
       total_count: photoIds.length,
       is_submitted: isSubmitted,
-      submitted_at: isSubmitted ? (existingSubmittedAt || new Date().toISOString()) : null,
+      submitted_at: submissionTimestamp,
     });
 
     // Save to PostgreSQL table
@@ -430,7 +444,7 @@ export async function POST(req: NextRequest) {
       if (is_submitted !== undefined) {
         updateData.is_submitted = isSubmitted;
         if (isSubmitted) {
-          updateData.submitted_at = new Date().toISOString();
+          updateData.submitted_at = submissionTimestamp;
         }
       }
 
@@ -455,10 +469,457 @@ export async function POST(req: NextRequest) {
         max_limit: limit,
         total_count: photoIds.length,
         is_submitted: isSubmitted,
-        submitted_at: isSubmitted ? new Date().toISOString() : null,
+        submitted_at: submissionTimestamp,
       },
     });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+  }
+}
+
+/**
+ * Asynchronously dispatches Email and WhatsApp notifications to the studio owner
+ * when a client submits their album photo selection.
+ */
+async function dispatchSelectionNotifications({
+  galleryId,
+  clientName,
+  clientEmail,
+  selectedPhotoCount,
+  maxLimit,
+  submittedAt,
+}: {
+  galleryId: string;
+  clientName: string;
+  clientEmail: string;
+  selectedPhotoCount: number;
+  maxLimit?: number | null;
+  submittedAt: string;
+}) {
+  try {
+    // 1. Fetch gallery details
+    const { data: gallery, error: galErr } = await supabaseAdmin
+      .from('event_galleries')
+      .select('id, title, workspace_id')
+      .eq('id', galleryId)
+      .maybeSingle();
+
+    if (galErr || !gallery) {
+      console.warn('[SelectionNotify] Failed to fetch gallery:', galErr?.message);
+      return;
+    }
+
+    // 2. Fetch total photos in this gallery
+    const { count: totalPhotosCount } = await supabaseAdmin
+      .from('gallery_photos')
+      .select('*', { count: 'exact', head: true })
+      .eq('gallery_id', galleryId);
+
+    const totalPhotos = totalPhotosCount || selectedPhotoCount;
+    const workspaceId = gallery.workspace_id || '00000000-0000-0000-0000-000000000000';
+
+    // 3. Resolve Studio Owner's Email from workspace
+    let ownerEmails: string[] = [];
+    let studioName = 'StudioCore Photography';
+
+    // A. Check workspace_settings config
+    const { data: wsSet } = await supabaseAdmin
+      .from('workspace_settings')
+      .select('config')
+      .eq('workspace_id', workspaceId)
+      .maybeSingle();
+
+    if (wsSet?.config?.invoice_email) ownerEmails.push(wsSet.config.invoice_email);
+    if (wsSet?.config?.email) ownerEmails.push(wsSet.config.email);
+    if (wsSet?.config?.studio_email) ownerEmails.push(wsSet.config.studio_email);
+    if (wsSet?.config?.invoice_company_name) studioName = wsSet.config.invoice_company_name;
+
+    // B. Check profiles table for this workspace
+    const { data: profile } = await supabaseAdmin
+      .from('profiles')
+      .select('email, full_name, business_name, leads_table_preferences')
+      .eq('id', workspaceId)
+      .maybeSingle();
+
+    if (profile) {
+      if (profile.email) ownerEmails.push(profile.email);
+      if (profile.leads_table_preferences?.invoice_email) ownerEmails.push(profile.leads_table_preferences.invoice_email);
+      if (profile.business_name) studioName = profile.business_name;
+      else if (profile.full_name) studioName = profile.full_name;
+    }
+
+    // C. Check workspace_members ONLY for role === 'owner' (never random freelancer members!)
+    const { data: members } = await supabaseAdmin
+      .from('workspace_members')
+      .select('email, role, full_name')
+      .eq('workspace_id', workspaceId)
+      .eq('role', 'owner');
+
+    if (Array.isArray(members)) {
+      for (const m of members) {
+        if (m.email) ownerEmails.push(m.email);
+      }
+    }
+
+    // Deduplicate and filter emails
+    ownerEmails = Array.from(new Set(ownerEmails.map((e) => e.trim().toLowerCase()))).filter((e) => e.includes('@'));
+
+    if (ownerEmails.length === 0) {
+      ownerEmails = ['filmifyweddings@gmail.com'];
+    }
+
+    // 4. Dispatch Email to Studio Owner(s) via Resend / SMTP
+    for (const email of ownerEmails) {
+      sendClientSelectionSubmittedEmail({
+        toEmail: email,
+        studioName,
+        galleryTitle: gallery.title,
+        galleryId,
+        clientName,
+        clientEmail,
+        selectedCount: selectedPhotoCount,
+        totalPhotos,
+        maxLimit,
+        submittedAt,
+      }).catch((e) => console.warn(`[SelectionNotify] Email notice for ${email}:`, e?.message));
+    }
+
+    // 5. Date & Time and Content Formatting
+    const subDate = new Date(submittedAt);
+    const submissionDate = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Kolkata',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    }).format(subDate); // e.g. "12 November 2026"
+
+    const submissionTime = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Kolkata',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    }).format(subDate); // e.g. "12:30 PM"
+
+    const selectedPhotosText = (maxLimit && maxLimit > 0)
+      ? `${selectedPhotoCount} / ${maxLimit} Photos (Limit: ${maxLimit})`
+      : `${selectedPhotoCount} Photos`;
+
+    const directSelectionUrl = `https://studiocore.in/workspace/gallery/${galleryId}?tab=selection`;
+
+    const standardWaText = 
+`📸 *New Album Selection Received!*
+
+*Card / Event:* ${gallery.title}
+*Client Name:* ${clientName}
+*Client Email:* ${clientEmail}
+*Selected Photos:* ${selectedPhotosText}
+*Date:* ${submissionDate}
+*Time:* ${submissionTime}
+
+🔗 *View Selection in StudioCore:*
+${directSelectionUrl}`;
+
+    // 6. Check workspace settings & active Baileys session
+    const { data: wsSettings } = await supabaseAdmin
+      .from('workspace_settings')
+      .select('config')
+      .eq('workspace_id', workspaceId)
+      .maybeSingle();
+
+    const wsConfig = wsSettings?.config || {};
+
+    let sessionPhone: string | null = null;
+    try {
+      const { data: session } = await supabaseAdmin
+        .from('baileys_sessions')
+        .select('phone_number, workspace_id, id')
+        .or(`workspace_id.eq.${workspaceId},user_id.eq.${workspaceId}`)
+        .order('updated_at', { ascending: false })
+        .maybeSingle();
+      if (session?.phone_number) sessionPhone = session.phone_number;
+    } catch (_) {}
+
+    // 7. Check for custom workflows configured for 'client_selection_submitted'
+    let activeWorkflows: any[] = [];
+    try {
+      const { data: allWorkflows } = await supabaseAdmin
+        .from('whatsapp_custom_workflows')
+        .select('*')
+        .eq('tenant_id', workspaceId)
+        .eq('status', 'Active');
+
+      activeWorkflows = (allWorkflows || []).filter((wf: any) => {
+        if (wf.target_group_id === 'client_selection_submitted') return true;
+        if (!wf.target_group_id) {
+          const steps = Array.isArray(wf.workflow_steps) ? wf.workflow_steps : [];
+          const hasSelectionTrigger = steps.some((s: any) =>
+            s.trigger_event === 'client_selection_submitted' ||
+            s.trigger === 'client_selection_submitted' ||
+            s.target_group_name === 'Album Selection' ||
+            s.target_group_jid?.includes('120363431739476709')
+          );
+          const nameHasSelection = wf.workflow_name?.toLowerCase().includes('selection') ||
+                                   wf.workflow_name?.toLowerCase().includes('album');
+          return hasSelectionTrigger || nameHasSelection;
+        }
+        return false;
+      });
+    } catch (wfErr) {
+      console.warn('[SelectionNotify] Error fetching custom workflows:', wfErr);
+    }
+
+    // 8. Find or Upsert Lead Record for CRM & Workflow Analytics
+    let leadId: string | null = null;
+    let clientPhone = '';
+
+    try {
+      const { data: regGuest } = await supabaseAdmin
+        .from('event_guest_registrations')
+        .select('phone, guest_name')
+        .eq('gallery_id', galleryId)
+        .eq('email', clientEmail)
+        .maybeSingle();
+
+      if (regGuest?.phone) {
+        clientPhone = regGuest.phone;
+      }
+    } catch (_) {}
+
+    try {
+      const activeWfIds = activeWorkflows.map((w: any) => w.id);
+      const { data: existingLead } = await supabaseAdmin
+        .from('leads')
+        .select('id, phone, raw_payload')
+        .eq('workspace_id', workspaceId)
+        .eq('email', clientEmail)
+        .maybeSingle();
+
+      if (existingLead) {
+        leadId = existingLead.id;
+        if (!clientPhone && existingLead.phone) {
+          clientPhone = existingLead.phone;
+        }
+        const currentEnrolled = Array.isArray(existingLead.raw_payload?.enrolled_workflow_ids)
+          ? existingLead.raw_payload.enrolled_workflow_ids
+          : [];
+        const updatedEnrolled = Array.from(new Set([...currentEnrolled, ...activeWfIds]));
+        await supabaseAdmin
+          .from('leads')
+          .update({
+            name: clientName,
+            phone: clientPhone || existingLead.phone || '',
+            raw_payload: {
+              ...(existingLead.raw_payload || {}),
+              card_name: gallery.title,
+              event_name: gallery.title,
+              gallery_title: gallery.title,
+              client_name: clientName,
+              client_email: clientEmail,
+              selected_count: String(selectedPhotoCount),
+              selection_limit: maxLimit ? String(maxLimit) : 'No Limit',
+              selected_photos: selectedPhotosText,
+              submission_date: submissionDate,
+              submission_time: submissionTime,
+              selection_url: directSelectionUrl,
+              gallery_url: directSelectionUrl,
+              enrolled_workflow_ids: updatedEnrolled,
+              enrolled_at: new Date().toISOString(),
+              last_selection_at: submittedAt,
+            },
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', existingLead.id);
+      } else {
+        const { data: newLead } = await supabaseAdmin
+          .from('leads')
+          .insert({
+            workspace_id: workspaceId,
+            name: clientName,
+            email: clientEmail,
+            phone: clientPhone || '',
+            source: 'gallery_selection',
+            status: 'new',
+            raw_payload: {
+              card_name: gallery.title,
+              event_name: gallery.title,
+              gallery_title: gallery.title,
+              client_name: clientName,
+              client_email: clientEmail,
+              selected_count: String(selectedPhotoCount),
+              selection_limit: maxLimit ? String(maxLimit) : 'No Limit',
+              selected_photos: selectedPhotosText,
+              submission_date: submissionDate,
+              submission_time: submissionTime,
+              selection_url: directSelectionUrl,
+              gallery_url: directSelectionUrl,
+              enrolled_workflow_ids: activeWfIds,
+              enrolled_at: new Date().toISOString(),
+              gallery_id: galleryId,
+            },
+          })
+          .select('id')
+          .single();
+
+        if (newLead) leadId = newLead.id;
+      }
+    } catch (leadErr) {
+      console.warn('[SelectionNotify] Lead upsert warning:', leadErr);
+    }
+
+    // 9. Execute Custom Workflows (if configured)
+    if (activeWorkflows.length > 0) {
+      for (const wf of activeWorkflows) {
+        // Increment execution count
+        await supabaseAdmin
+          .from('whatsapp_custom_workflows')
+          .update({
+            execution_count: (wf.execution_count || 0) + 1,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', wf.id);
+
+        const steps = Array.isArray(wf.workflow_steps) ? wf.workflow_steps : [];
+        for (let i = 0; i < steps.length; i++) {
+          const step = steps[i];
+          const isGroupTarget = step.target_type === 'group';
+
+          let destination = isGroupTarget ? step.target_group_jid : clientPhone;
+          if (!destination) {
+            destination = step.target_group_jid || wsConfig.whatsapp_album_group_jid || wsConfig.whatsapp_group_jid || wsConfig.whatsapp_notification_phone || sessionPhone;
+          }
+          if (!destination) continue;
+
+          let stepText = standardWaText;
+          if (step.template_id || step.template_name) {
+            let templateBody = '';
+            if (step.template_id) {
+              const { data: t } = await supabaseAdmin
+                .from('tenant_whatsapp_templates')
+                .select('body_text')
+                .eq('id', step.template_id)
+                .maybeSingle();
+              templateBody = t?.body_text || '';
+            } else if (step.template_name) {
+              const { data: t } = await supabaseAdmin
+                .from('tenant_whatsapp_templates')
+                .select('body_text')
+                .eq('name', step.template_name)
+                .eq('tenant_id', workspaceId)
+                .maybeSingle();
+              templateBody = t?.body_text || '';
+            }
+
+            if (templateBody && templateBody.trim()) {
+              stepText = templateBody
+                .replace(/\{\{\s*card_name\s*\}\}/gi, gallery.title)
+                .replace(/\{\{\s*event_name\s*\}\}/gi, gallery.title)
+                .replace(/\{\{\s*gallery_title\s*\}\}/gi, gallery.title)
+                .replace(/\{\{\s*client_name\s*\}\}/gi, clientName)
+                .replace(/\{\{\s*client_email\s*\}\}/gi, clientEmail)
+                .replace(/\{\{\s*selected_count\s*\}\}/gi, String(selectedPhotoCount))
+                .replace(/\{\{\s*selection_limit\s*\}\}/gi, maxLimit ? String(maxLimit) : 'No Limit')
+                .replace(/\{\{\s*selected_photos\s*\}\}/gi, selectedPhotosText)
+                .replace(/\{\{\s*submission_date\s*\}\}/gi, submissionDate)
+                .replace(/\{\{\s*submission_time\s*\}\}/gi, submissionTime)
+                .replace(/\{\{\s*selection_url\s*\}\}/gi, directSelectionUrl)
+                .replace(/\{\{\s*gallery_url\s*\}\}/gi, directSelectionUrl);
+            }
+          }
+
+          // Insert workflow log for Workflow Analytics
+          const { data: wfLog } = await supabaseAdmin
+            .from('whatsapp_workflow_logs')
+            .insert({
+              tenant_id: workspaceId,
+              workspace_id: workspaceId,
+              workflow_id: wf.id,
+              lead_id: leadId,
+              step_index: step.sort_index ?? i,
+              status: 'pending',
+              sent_at: new Date().toISOString(),
+            })
+            .select('id')
+            .single();
+
+          // Enqueue action in Baileys queue
+          await supabaseAdmin
+            .from('baileys_action_queue')
+            .insert({
+              workspace_id: workspaceId,
+              action_type: 'send_text',
+              payload: {
+                to: destination.trim(),
+                text: stepText,
+                workflowId: wf.id,
+                workflow_id: wf.id,
+                workflowLogId: wfLog?.id,
+                leadId: leadId,
+              },
+              status: 'pending',
+              priority: 1, // High priority
+            });
+        }
+      }
+    } else {
+      // 10. Default Direct Notification Fallback
+      const targetDestinations: string[] = [];
+
+      if (wsConfig.whatsapp_album_group_jid) {
+        targetDestinations.push(wsConfig.whatsapp_album_group_jid);
+      }
+
+      // Auto-detect Album Selection group from baileys_chats if not set in config
+      if (targetDestinations.length === 0) {
+        try {
+          const { data: albumGroup } = await supabaseAdmin
+            .from('baileys_chats')
+            .select('jid, display_name')
+            .eq('workspace_id', workspaceId)
+            .ilike('display_name', '%album selection%')
+            .maybeSingle();
+
+          if (albumGroup?.jid) {
+            targetDestinations.push(albumGroup.jid);
+          }
+        } catch (_) {}
+      }
+
+      if (wsConfig.whatsapp_group_jid && !targetDestinations.includes(wsConfig.whatsapp_group_jid)) {
+        targetDestinations.push(wsConfig.whatsapp_group_jid);
+      }
+      if (wsConfig.whatsapp_notification_phone) {
+        targetDestinations.push(wsConfig.whatsapp_notification_phone);
+      }
+
+      // Fallback specifically to Album Selection group (120363431739476709@g.us)
+      if (targetDestinations.length === 0) {
+        targetDestinations.push('120363431739476709@g.us');
+      }
+
+      if (targetDestinations.length === 0 && sessionPhone) {
+        targetDestinations.push(sessionPhone);
+      }
+
+      for (const target of targetDestinations) {
+        const cleanTarget = target.trim();
+        if (!cleanTarget) continue;
+
+        await supabaseAdmin
+          .from('baileys_action_queue')
+          .insert({
+            workspace_id: workspaceId,
+            action_type: 'send_text',
+            payload: {
+              to: cleanTarget,
+              text: standardWaText,
+              leadId: leadId,
+            },
+            status: 'pending',
+            priority: 1, // High priority
+          });
+      }
+    }
+  } catch (err: any) {
+    console.warn('[dispatchSelectionNotifications] Notice:', err?.message);
   }
 }

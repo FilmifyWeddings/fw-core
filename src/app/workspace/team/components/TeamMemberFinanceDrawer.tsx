@@ -145,19 +145,26 @@ export default function TeamMemberFinanceDrawer({
     }, 4000);
   }, []);
 
-  // Navigation Tabs
-  const [activeTab, setActiveTab] = useState<'bookings' | 'payroll' | 'analytics' | 'deliverables'>(initialTab || 'bookings');
+  // Member Type Normalization
+  const memberType = (member?.primary_type || 'FREELANCER').toUpperCase();
+  const isPartner = memberType.includes('PARTNER') || memberType.includes('VENDOR') || (Array.isArray((member as any)?.member_types) && (member as any).member_types.some((t: any) => ['PARTNER', 'VENDOR', 'LAB'].includes(String(t).toUpperCase()))) || /partner|vendor/i.test((member as any)?.type || '');
+  const isLab = memberType.includes('LAB') || memberType.includes('ALBUM') || isPartner || /lab|press|print|album/i.test(member?.primary_role || '');
 
-  useEffect(() => {
-    if (isOpen && initialTab) {
-      setActiveTab(initialTab);
-    }
-  }, [isOpen, initialTab]);
+  // Navigation Tabs
+  const [activeTab, setActiveTab] = useState<'bookings' | 'deliverables' | 'album_printing' | 'payroll' | 'analytics'>(initialTab || 'bookings');
   const [isRefreshing, setIsRefreshing] = useState(false);
   
   // Data States
   const [payouts, setPayouts] = useState<TeamEventPayout[]>([]);
   const [albumOrders, setAlbumOrders] = useState<PartnerAlbumOrder[]>([]);
+  const [albumOrdersFilter, setAlbumOrdersFilter] = useState<'all' | 'pending' | 'printing' | 'paid'>('all');
+  const [showAddAlbumForm, setShowAddAlbumForm] = useState(false);
+  const [newAlbumClientName, setNewAlbumClientName] = useState('');
+  const [newAlbumType, setNewAlbumType] = useState('Luxury Photobook');
+  const [newAlbumSheets, setNewAlbumSheets] = useState('30');
+  const [newAlbumAgreed, setNewAlbumAgreed] = useState('');
+  const [newAlbumDueDate, setNewAlbumDueDate] = useState('');
+  const [isSavingNewAlbum, setIsSavingNewAlbum] = useState(false);
   const [deliverables, setDeliverables] = useState<TeamDeliverableAssignment[]>([]);
   const [deliverablesFilter, setDeliverablesFilter] = useState<'all' | 'pending' | 'paid'>('all');
   const [salaryRecords, setSalaryRecords] = useState<TeamSalaryRecord[]>([]);
@@ -171,6 +178,27 @@ export default function TeamMemberFinanceDrawer({
     pending_events_count: 0,
     monthly_breakdown: []
   });
+
+  useEffect(() => {
+    if (isOpen) {
+      if (initialTab) {
+        if (initialTab === 'album_printing' && albumOrders.length === 0 && !isLab) {
+          setActiveTab('bookings');
+        } else {
+          setActiveTab(initialTab as any);
+        }
+      } else if (isLab || albumOrders.length > 0) {
+        if (isLab) setActiveTab('album_printing');
+      }
+    }
+  }, [isOpen, initialTab, isLab, isPartner, albumOrders.length]);
+
+  // If on album_printing tab but member has no assigned album orders and is not a lab, switch to bookings/deliverables
+  useEffect(() => {
+    if (activeTab === 'album_printing' && albumOrders.length === 0 && !isLab) {
+      setActiveTab(deliverables.length > 0 ? 'deliverables' : 'bookings');
+    }
+  }, [activeTab, albumOrders.length, isLab, deliverables.length]);
 
   // Modal States for Shoot / Album / Deliverable Payment
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
@@ -233,16 +261,6 @@ export default function TeamMemberFinanceDrawer({
   const [salaryAutoSyncExpense, setSalaryAutoSyncExpense] = useState<boolean>(true);
   const [isSubmittingSalary, setIsSubmittingSalary] = useState<boolean>(false);
 
-  // Unlimited Year Options for inline salary slip form
-  const inlineYearOptions = useMemo(() => {
-    const list: number[] = [];
-    const curY = now.getFullYear();
-    for (let y = curY - 10; y <= curY + 15; y++) {
-      list.push(y);
-    }
-    return list;
-  }, [now]);
-
   // Payroll Filter State
   const [payrollFilterYear, setPayrollFilterYear] = useState<string>('All');
   const [payrollFilterMonth, setPayrollFilterMonth] = useState<string>('All');
@@ -252,9 +270,15 @@ export default function TeamMemberFinanceDrawer({
   const [analyticsCategoryScope, setAnalyticsCategoryScope] = useState<'all' | 'shoots' | 'deliverables' | 'salaries'>('all');
   const [analyticsStatusScope, setAnalyticsStatusScope] = useState<'all' | 'completed' | 'pending'>('all');
 
-  // Member Type Normalization
-  const memberType = (member?.primary_type || 'FREELANCER').toUpperCase();
-  const isLab = memberType.includes('LAB') || memberType.includes('ALBUM') || memberType.includes('PARTNER');
+  // Unlimited Year Options for inline salary slip form
+  const inlineYearOptions = useMemo(() => {
+    const list: number[] = [];
+    const curY = now.getFullYear();
+    for (let y = curY - 10; y <= curY + 15; y++) {
+      list.push(y);
+    }
+    return list;
+  }, [now]);
 
   // Helper to format Month/Year cleanly - STRICTLY prioritizes explicit month_year over paidDate
   const formatSlipTitle = useCallback((monthYear?: string, paidDate?: string) => {
@@ -351,7 +375,7 @@ export default function TeamMemberFinanceDrawer({
           .eq('member_id', member.id)
           .order('month_year', { ascending: false }),
 
-        isLab ? fetchPartnerAlbumOrders(workspaceId || '', member.id) : Promise.resolve([]),
+        fetchPartnerAlbumOrders(workspaceId || '', member.id, member.name, member.email),
 
         fetchMemberDeliverables(workspaceId || '', [member.id])
       ]);
@@ -513,8 +537,8 @@ export default function TeamMemberFinanceDrawer({
       const delivAgreedTotal = memberDeliverables.reduce((a, b) => a + Number(b.agreed_amount || 0), 0);
       const delivPaidTotal = memberDeliverables.reduce((a, b) => a + Number(b.paid_amount || 0), 0);
 
-      const totalAgreed = eventAgreed + salaryAgreedTotal + (isLab ? albumAgreedTotal : 0) + delivAgreedTotal;
-      const totalPaid = eventPaid + salaryPaidTotal + (isLab ? albumPaidTotal : 0) + delivPaidTotal;
+      const totalAgreed = eventAgreed + salaryAgreedTotal + albumAgreedTotal + delivAgreedTotal;
+      const totalPaid = eventPaid + salaryPaidTotal + albumPaidTotal + delivPaidTotal;
       const totalBalance = Math.max(0, totalAgreed - totalPaid);
 
       const computedSummary: TeamFinancialSummary = {
@@ -522,7 +546,7 @@ export default function TeamMemberFinanceDrawer({
         total_agreed: totalAgreed,
         total_paid: totalPaid,
         total_balance: totalBalance,
-        active_events_count: eventPayouts.length + (isLab ? orders.length : 0) + memberDeliverables.length,
+        active_events_count: eventPayouts.length + orders.length + memberDeliverables.length,
         paid_events_count: eventPayouts.filter(p => p.status === 'PAID' || p.status === 'completed').length,
         pending_events_count: eventPayouts.filter(p => p.status !== 'PAID' && p.status !== 'completed').length,
         monthly_breakdown: []
@@ -1118,6 +1142,22 @@ export default function TeamMemberFinanceDrawer({
         return p;
       }));
 
+      if (paymentTarget.type === 'ALBUM') {
+        setAlbumOrders(prev => prev.map(o => {
+          if (o.id === paymentTarget.id) {
+            return {
+              ...o,
+              total_amount: finalAgreed,
+              paid_amount: finalPaid,
+              balance_amount: finalBalance,
+              payment_status: (finalBalance === 0 && finalAgreed > 0) ? 'PAID' : (finalPaid > 0 ? 'PARTIAL' : 'PENDING'),
+              notes: pNotes || o.notes,
+            };
+          }
+          return o;
+        }));
+      }
+
       if (paymentTarget.type === 'DELIVERABLE') {
         setDeliverables(prev => prev.map(d => {
           if (d.id === paymentTarget.id) {
@@ -1426,6 +1466,21 @@ export default function TeamMemberFinanceDrawer({
                 {deliverables.length}
               </span>
             </button>
+            {(albumOrders.length > 0 || isLab) && (
+              <button
+                onClick={() => setActiveTab('album_printing')}
+                className={`py-1.5 px-3 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 flex items-center gap-1.5 ${
+                  activeTab === 'album_printing'
+                    ? 'bg-amber-600 text-white shadow-xs font-black'
+                    : 'bg-white text-stone-600 hover:text-stone-900 border border-stone-200/80 hover:bg-stone-50'
+                }`}
+              >
+                <span>📖 Album Designing &amp; Printing Lab</span>
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${activeTab === 'album_printing' ? 'bg-white/20 text-white' : 'bg-stone-200 text-stone-700'}`}>
+                  {albumOrders.length}
+                </span>
+              </button>
+            )}
             <button
               onClick={() => setActiveTab('payroll')}
               className={`py-1.5 px-3 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 flex items-center gap-1.5 ${
@@ -1936,6 +1991,346 @@ export default function TeamMemberFinanceDrawer({
                                 <span>Record Payment / Edit Deliverable Fee</span>
                               </button>
                             )}
+                          </div>
+                        );
+                      })
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ══════════════════════════════════════════════════════════════
+                TAB 2.5: ALBUM PRINTING & LAB (PARTNER COMMERCIALS & DISPATCH)
+               ══════════════════════════════════════════════════════════════ */}
+            {activeTab === 'album_printing' && (
+              <div className="space-y-4">
+                {/* 1. Header Toolbar */}
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div>
+                    <h3 className="text-xs sm:text-sm font-black text-amber-950 flex items-center gap-1.5">
+                      <BookOpen className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Album Designing &amp; Printing Lab Commercials</span>
+                    </h3>
+                    <p className="text-[10px] text-stone-500 font-medium">
+                      Manage designing &amp; printing deliverables, client jobs, production status, and payments.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {/* Status Filters */}
+                    <div className="flex items-center gap-1 p-0.5 bg-stone-100 rounded-lg">
+                      {[
+                        { id: 'all', label: 'All' },
+                        { id: 'pending', label: 'Pending Due' },
+                        { id: 'printing', label: 'In Print' },
+                        { id: 'paid', label: 'Fully Paid' },
+                      ].map(f => (
+                        <button
+                          key={f.id}
+                          type="button"
+                          onClick={() => setAlbumOrdersFilter(f.id as any)}
+                          className={`px-2 py-0.5 text-[10px] font-bold rounded-md transition cursor-pointer ${
+                            albumOrdersFilter === f.id
+                              ? 'bg-white text-stone-900 shadow-2xs'
+                              : 'text-stone-500 hover:text-stone-800'
+                          }`}
+                        >
+                          {f.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Toggle Add Custom Order Form */}
+                    <button
+                      type="button"
+                      onClick={() => setShowAddAlbumForm(prev => !prev)}
+                      className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-[10px] font-black transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                    >
+                      <Plus className="w-3 h-3 stroke-[3]" />
+                      <span>{showAddAlbumForm ? 'Close' : '+ Add Album Order'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Collapsible Add Custom Album Order Form */}
+                {showAddAlbumForm && (
+                  <div className="p-4 bg-amber-50/70 border border-amber-200/90 rounded-2xl space-y-3 shadow-2xs">
+                    <span className="text-xs font-black text-amber-950 flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Add New Album Printing Order for {member?.name}</span>
+                    </span>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
+                      <div>
+                        <label className="text-[10px] font-bold text-stone-600 block mb-1">Client / Couple Name *</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Rahul &amp; Sneha"
+                          value={newAlbumClientName}
+                          onChange={(e) => setNewAlbumClientName(e.target.value)}
+                          className="w-full px-2.5 py-1.5 bg-white border border-stone-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-amber-500 shadow-2xs"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-bold text-stone-600 block mb-1">Album Title / Type</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Wedding Album 40P"
+                          value={newAlbumType}
+                          onChange={(e) => setNewAlbumType(e.target.value)}
+                          className="w-full px-2.5 py-1.5 bg-white border border-stone-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-amber-500 shadow-2xs"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-bold text-stone-600 block mb-1">Agreed Amount (₹) *</label>
+                        <input
+                          type="number"
+                          placeholder="e.g. 8500"
+                          value={newAlbumAgreed}
+                          onChange={(e) => setNewAlbumAgreed(e.target.value)}
+                          className="w-full px-2.5 py-1.5 bg-white border border-stone-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:border-amber-500 shadow-2xs"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-bold text-stone-600 block mb-1">Due Date</label>
+                        <input
+                          type="date"
+                          value={newAlbumDueDate}
+                          onChange={(e) => setNewAlbumDueDate(e.target.value)}
+                          className="w-full px-2.5 py-1.5 bg-white border border-stone-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-amber-500 shadow-2xs"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setShowAddAlbumForm(false)}
+                        className="px-3 py-1.5 rounded-xl border border-stone-200 text-stone-600 hover:bg-stone-100 text-xs font-bold cursor-pointer transition"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isSavingNewAlbum || !newAlbumClientName.trim() || !newAlbumAgreed}
+                        onClick={async () => {
+                          if (!newAlbumClientName.trim() || !newAlbumAgreed) return;
+                          setIsSavingNewAlbum(true);
+                          try {
+                            const agreed = Number(newAlbumAgreed) || 0;
+                            const created = await savePartnerAlbumOrder(workspaceId || '', {
+                              partner_id: member.id,
+                              partner_name: member.name,
+                              client_name: newAlbumClientName.trim(),
+                              album_type: newAlbumType.trim() || 'Luxury Photobook',
+                              sheet_count: Number(newAlbumSheets) || 30,
+                              total_amount: agreed,
+                              paid_amount: 0,
+                              order_status: 'PRINTING',
+                              delivery_date: newAlbumDueDate,
+                              due_date: newAlbumDueDate,
+                            });
+                            setAlbumOrders(prev => [created, ...prev]);
+                            setNewAlbumClientName('');
+                            setNewAlbumAgreed('');
+                            setShowAddAlbumForm(false);
+                            showToast('Album order added successfully!');
+                          } catch (err) {
+                            console.error('Error saving album order:', err);
+                          } finally {
+                            setIsSavingNewAlbum(false);
+                          }
+                        }}
+                        className="px-4 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-black transition cursor-pointer disabled:opacity-50 shadow-2xs"
+                      >
+                        {isSavingNewAlbum ? 'Saving...' : 'Save Album Order'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* 3 Metric Pills for Album Printing */}
+                {(() => {
+                  const albumAgreedTotal = albumOrders.reduce((acc, o) => acc + (Number(o.total_amount) || 0), 0);
+                  const albumPaidTotal = albumOrders.reduce((acc, o) => acc + (Number(o.paid_amount) || 0), 0);
+                  const albumBalanceTotal = Math.max(0, albumAgreedTotal - albumPaidTotal);
+                  return (
+                    <div className="grid grid-cols-3 gap-2 sm:gap-3">
+                      <div className="p-3 bg-white rounded-2xl border border-stone-200/90 shadow-2xs">
+                        <span className="text-[10px] font-bold text-stone-500 uppercase tracking-wider block">Total Agreed</span>
+                        <span className="text-xs sm:text-sm font-black text-stone-900 font-mono">₹{albumAgreedTotal.toLocaleString('en-IN')}</span>
+                      </div>
+                      <div className="p-3 bg-white rounded-2xl border border-emerald-200/90 shadow-2xs bg-emerald-50/20">
+                        <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider block">Total Paid</span>
+                        <span className="text-xs sm:text-sm font-black text-emerald-700 font-mono">₹{albumPaidTotal.toLocaleString('en-IN')}</span>
+                      </div>
+                      <div className="p-3 bg-white rounded-2xl border border-amber-200/90 shadow-2xs bg-amber-50/20">
+                        <span className="text-[10px] font-bold text-amber-600 uppercase tracking-wider block">Remaining Balance</span>
+                        <span className="text-xs sm:text-sm font-black text-amber-700 font-mono">₹{albumBalanceTotal.toLocaleString('en-IN')}</span>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Album Orders List */}
+                <div className="space-y-2.5">
+                  {albumOrders.length === 0 ? (
+                    <div className="p-8 text-center bg-white rounded-2xl border border-stone-200 text-stone-400 space-y-1">
+                      <BookOpen className="w-8 h-8 text-stone-300 mx-auto mb-2" />
+                      <p className="text-xs font-bold text-stone-600">No Album Printing Orders Found</p>
+                      <p className="text-[11px] text-stone-400">
+                        When you assign this printing partner in Post-Production deliverables, or add custom orders, they will appear here with complete commercial tracking.
+                      </p>
+                    </div>
+                  ) : (
+                    albumOrders
+                      .filter(order => {
+                        const isSettled = order.balance_amount <= 0 && order.total_amount > 0;
+                        if (albumOrdersFilter === 'paid') return isSettled;
+                        if (albumOrdersFilter === 'pending') return !isSettled;
+                        if (albumOrdersFilter === 'printing') return order.order_status !== 'DELIVERED';
+                        return true;
+                      })
+                      .map((order) => {
+                        const isSettled = order.balance_amount <= 0 && order.total_amount > 0;
+                        const isDesigningOrder = order.category === 'album_design' || (order.role && /design/i.test(order.role));
+                        return (
+                          <div 
+                            key={order.id}
+                            className={`p-3.5 sm:p-4 rounded-2xl border transition-all space-y-3 bg-white ${
+                              isSettled 
+                                ? 'border-emerald-200/90 bg-emerald-50/5' 
+                                : order.balance_amount > 0 
+                                ? 'border-amber-200/90 bg-amber-50/10' 
+                                : 'border-stone-200/90'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0 space-y-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="text-xs sm:text-sm font-black text-stone-900">
+                                    {order.client_name}
+                                  </span>
+                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${
+                                    isDesigningOrder 
+                                      ? 'bg-amber-100 text-amber-900 border-amber-300' 
+                                      : 'bg-purple-100 text-purple-900 border-purple-300'
+                                  }`}>
+                                    {isDesigningOrder ? '🎨 Album Designing' : '🖨️ Album Printing'}
+                                  </span>
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-stone-100 text-stone-800 border border-stone-200">
+                                    📖 {order.album_type || 'Wedding Album'}
+                                  </span>
+                                  {order.sheet_count > 0 && (
+                                    <span className="text-[10px] text-stone-500 font-semibold">
+                                      • {order.sheet_count} Sheets ({order.page_count || order.sheet_count * 2} Pages)
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div className="flex items-center gap-3 text-[11px] text-stone-500 flex-wrap">
+                                  {(order.due_date || order.delivery_date) && (
+                                    <span className="flex items-center gap-1 font-medium">
+                                      <Calendar className="w-3 h-3 text-stone-400" />
+                                      <span>Due: {order.due_date || order.delivery_date}</span>
+                                    </span>
+                                  )}
+                                  {order.notes && (
+                                    <span className="text-stone-400 italic truncate max-w-xs">
+                                      &quot;{order.notes}&quot;
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                {/* Quick status dropdown */}
+                                <select
+                                  value={order.order_status || (isDesigningOrder ? 'In Progress' : 'PRINTING')}
+                                  onChange={async (e) => {
+                                    const newStatus = e.target.value as any;
+                                    setAlbumOrders(prev => prev.map(o => o.id === order.id ? { ...o, order_status: newStatus } : o));
+                                    await savePartnerAlbumOrder(workspaceId || '', {
+                                      ...order,
+                                      order_status: newStatus
+                                    });
+                                  }}
+                                  className="text-[10px] font-black px-2 py-1 rounded-lg border border-stone-200 bg-stone-50 text-stone-800 cursor-pointer shadow-2xs"
+                                >
+                                  {isDesigningOrder ? (
+                                    <>
+                                      <option value="Pending">⏳ Pending</option>
+                                      <option value="In Progress">🎨 In Designing</option>
+                                      <option value="Client Review">👁️ Client Review</option>
+                                      <option value="Changes Requested">⚡ Changes Requested</option>
+                                      <option value="Completed">✅ Design Completed</option>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <option value="Pending">⏳ Pending</option>
+                                      <option value="Sent for Printing">📤 Sent for Printing</option>
+                                      <option value="Printing In Progress">🖨️ In Printing</option>
+                                      <option value="Quality Check">📦 Quality Check / Binding</option>
+                                      <option value="Dispatched">🚚 Dispatched</option>
+                                      <option value="Delivered">✅ Delivered</option>
+                                    </>
+                                  )}
+                                </select>
+
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                                  isSettled 
+                                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' 
+                                    : order.paid_amount > 0 
+                                    ? 'bg-amber-100 text-amber-800 border border-amber-200' 
+                                    : 'bg-rose-100 text-rose-800 border border-rose-200'
+                                }`}>
+                                  {order.payment_status || (isSettled ? 'PAID' : order.paid_amount > 0 ? 'PARTIAL' : 'PENDING')}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Commercials Grid */}
+                            <div className="grid grid-cols-3 gap-2 p-2.5 bg-stone-50 rounded-xl border border-stone-200/70 text-center">
+                              <div>
+                                <span className="text-[9px] font-bold text-stone-400 uppercase tracking-wider block">Agreed</span>
+                                <span className="text-xs font-black text-stone-800 font-mono">₹{Number(order.total_amount || 0).toLocaleString('en-IN')}</span>
+                              </div>
+                              <div>
+                                <span className="text-[9px] font-bold text-emerald-600 uppercase tracking-wider block">Paid</span>
+                                <span className="text-xs font-black text-emerald-700 font-mono">₹{Number(order.paid_amount || 0).toLocaleString('en-IN')}</span>
+                              </div>
+                              <div>
+                                <span className="text-[9px] font-bold text-amber-600 uppercase tracking-wider block">Balance</span>
+                                <span className={`text-xs font-black font-mono ${order.balance_amount > 0 ? 'text-amber-700 font-bold' : 'text-emerald-700'}`}>
+                                  ₹{Number(order.balance_amount || 0).toLocaleString('en-IN')}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Record Payment Button */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPaymentTarget({
+                                  id: order.id,
+                                  title: `${isDesigningOrder ? 'Album Designing' : 'Album Printing'}: ${order.album_type || 'Wedding Album'}`,
+                                  clientName: order.client_name,
+                                  type: 'ALBUM',
+                                  balanceAmount: Number(order.balance_amount) || 0,
+                                  totalAmount: Number(order.total_amount) || 0,
+                                  paidAmount: Number(order.paid_amount) || 0,
+                                  role: isDesigningOrder ? 'Album Designer' : 'Printing Lab & Partner'
+                                });
+                                setIsPaymentModalOpen(true);
+                              }}
+                              className="w-full py-1.5 font-bold text-xs rounded-xl shadow-xs cursor-pointer flex items-center justify-center gap-1.5 transition bg-stone-900 hover:bg-black text-white"
+                            >
+                              <CreditCard className="w-3.5 h-3.5 text-amber-400" />
+                              <span>{isDesigningOrder ? 'Record Payment / Edit Designing Fee' : 'Record Payment / Edit Printing Fee'}</span>
+                            </button>
                           </div>
                         );
                       })

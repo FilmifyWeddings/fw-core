@@ -23,6 +23,25 @@ function isPublicRoute(pathname: string): boolean {
   );
 }
 
+// Auto-purge legacy pre-repair cached data from localStorage across all clients
+if (typeof window !== 'undefined') {
+  try {
+    const BUILD_STAMP = '20261127_live_repair_v1';
+    if (localStorage.getItem('sc_last_purged_build') !== BUILD_STAMP) {
+      const keys = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && (k.startsWith('sc_cached_') || k.startsWith('sc_query_cache_'))) {
+          keys.push(k);
+        }
+      }
+      keys.forEach(k => localStorage.removeItem(k));
+      localStorage.setItem('sc_last_purged_build', BUILD_STAMP);
+      console.log('[VersionGuard] Auto-purged legacy client caches for build:', BUILD_STAMP);
+    }
+  } catch (_) {}
+}
+
 export function VersionGuard({ children }: { children: React.ReactNode }) {
   // 1. Disable in Development Mode: strictly runs ONLY in production
   if (process.env.NODE_ENV !== 'production') {

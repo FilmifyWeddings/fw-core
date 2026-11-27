@@ -1,5 +1,4 @@
-import { supabase } from '@/lib/supabase';
-import { syncAssignmentAdvancePayout } from './payoutExpensesSyncService';
+import { authFetchJson } from '@/lib/client-auth-fetch';
 
 export interface SaveCrewAssignmentCommercialsParams {
   workspaceId: string;
@@ -30,208 +29,40 @@ export interface SaveCrewAssignmentCommercialsParams {
 }
 
 /**
- * Saves crew assignment commercials atomically to both fw_assignments and team_event_payouts.
+ * Saves crew assignment commercials atomically on the server via /api/assignments/commercials
+ * (writes fw_assignments with all NOT NULL fields, team_event_payouts, tranches & studio_expenses).
  */
 export async function saveCrewAssignmentCommercials(params: SaveCrewAssignmentCommercialsParams) {
-  const agreed = Number(params.agreedAmount) || 0;
-  const advance = Number(params.advancePaid) || 0;
-  const balanceDue = Math.max(0, agreed - advance);
-  const assignStatus = balanceDue <= 0 && agreed > 0 ? 'COMPLETED' : 'PENDING';
-  const payoutStatus = balanceDue <= 0 && agreed > 0 ? 'PAID' : (advance > 0 ? 'PARTIAL' : 'PENDING');
-  const pStatusDb = balanceDue <= 0 && agreed > 0 ? 'completed' : (advance > 0 ? 'partial' : 'pending');
-  const pDate = params.paymentDate || new Date().toISOString().split('T')[0];
-  const pMethod = params.paymentMethod || 'UPI/Bank Transfer';
+  const effectiveWsId =
+    params.workspaceId ||
+    (typeof window !== 'undefined' ? localStorage.getItem('sc_active_workspace_id') || '' : '');
 
-  let updatedAssignId = params.assignmentId;
-  const cleanAssignId = String(params.assignmentId || '');
+  const res = await authFetchJson('/api/assignments/commercials', {
+    method: 'POST',
+    body: JSON.stringify({
+      action: 'assign',
+      ...params,
+      workspaceId: effectiveWsId,
+    }),
+  });
 
-  // 1. Ensure member row exists in fw_team_members without altering member's profile rate
-  let currentUid: string | undefined;
-  if (params.member?.id) {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      currentUid = session?.user?.id;
-      const memberUpsert: any = {
-        id: params.member.id,
-        name: params.member.name || 'Team Member',
-        phone_number: params.member.phone_number || params.member.phone || null,
-        primary_role: params.assignedRole || params.member.primary_role || 'Crew',
-        user_id: currentUid || undefined,
-        is_active: true,
-      };
-      if (params.member.default_daily_rate !== undefined) {
-        memberUpsert.default_daily_rate = params.member.default_daily_rate;
-      }
-      await supabase.from('fw_team_members').upsert(memberUpsert, { onConflict: 'id' });
-    } catch (_) {}
-  }
-
-  // 2. Atomically update/insert fw_assignments
-  const assignmentPayload: any = {
-    assigned_member_id: String(params.member.id),
-    assigned_member_name: params.member.name,
-    agreed_amount: agreed,
-    advance_amount: advance,
-    paid_amount: advance,
-    balance_amount: balanceDue,
-    payment_status: pStatusDb,
-    payment_method: pMethod,
-    payment_date: pDate,
-    status: assignStatus,
-    notes: params.notes || null,
-    updated_at: new Date().toISOString(),
-    ...(params.workspaceId ? { workspace_id: params.workspaceId } : {}),
-    ...(currentUid || params.workspaceId ? { user_id: currentUid || params.workspaceId } : {}),
-    ...(params.eventName ? { sub_event_name: params.eventName } : {}),
-    ...(params.clientName ? { client_name: params.clientName } : {})
-  };
-
-  let savedRow: any = null;
-  try {
-    if (cleanAssignId && !cleanAssignId.includes('-role-')) {
-      const { data: updated } = await supabase
-        .from('fw_assignments')
-        .update(assignmentPayload)
-        .eq('id', cleanAssignId)
-        .select('*, fw_team_members(*)')
-        .maybeSingle();
-      if (updated) savedRow = updated;
-    } else if (params.subEventId) {
-      const { data: existingRow } = await supabase
-        .from('fw_assignments')
-        .select('id')
-        .eq('sub_event_id', String(params.subEventId))
-        .eq('required_role', params.assignedRole)
-        .maybeSingle();
-
-      if (existingRow?.id) {
-        updatedAssignId = existingRow.id;
-        const { data: updated } = await supabase
-          .from('fw_assignments')
-          .update(assignmentPayload)
-          .eq('id', existingRow.id)
-          .select('*, fw_team_members(*)')
-          .maybeSingle();
-        if (updated) savedRow = updated;
-      } else {
-        const { data: inserted } = await supabase
-          .from('fw_assignments')
-          .insert([{
-            project_id: params.projectId,
-            sub_event_id: params.subEventId,
-            required_role: params.assignedRole,
-            ...assignmentPayload
-          }])
-          .select('*, fw_team_members(*)')
-          .maybeSingle();
-        if (inserted?.id) {
-          updatedAssignId = inserted.id;
-          savedRow = inserted;
-        }
-      }
-    }
-  } catch (assignErr) {
-    console.warn('[crewAssignmentService] fw_assignments update error:', assignErr);
-  }
-
-  // 3. Atomically upsert team_event_payouts row
-  const payoutPayload = {
-    workspace_id: params.workspaceId,
-    user_id: params.workspaceId,
-    member_id: String(params.member.id),
-    member_name: params.member.name,
-    project_id: String(params.projectId || ''),
-    sub_event_id: String(params.subEventId || ''),
-    client_name: params.clientName || 'Wedding Client',
-    event_name: params.eventName || 'Shoot Event',
-    event_date: params.eventDate || pDate,
-    role: params.assignedRole,
-    agreed_amount: agreed,
-    paid_amount: advance,
-    balance_amount: balanceDue,
-    status: payoutStatus,
-    payment_method: pMethod,
-    payment_date: pDate,
-    notes: params.notes || null,
-    updated_at: new Date().toISOString()
-  };
-
-  try {
-    const { data: existingPayout } = await supabase
-      .from('team_event_payouts')
-      .select('id')
-      .eq('sub_event_id', String(params.subEventId || ''))
-      .eq('member_id', String(params.member.id))
-      .maybeSingle();
-
-    if (existingPayout?.id) {
-      await supabase
-        .from('team_event_payouts')
-        .update(payoutPayload)
-        .eq('id', existingPayout.id);
-    } else {
-      const { error: upsertErr } = await supabase
-        .from('team_event_payouts')
-        .upsert(payoutPayload, { onConflict: 'sub_event_id,member_id' });
-      if (upsertErr) {
-        await supabase.from('team_event_payouts').insert([payoutPayload]);
-      }
-    }
-  } catch (payoutErr) {
-    console.warn('[crewAssignmentService] team_event_payouts sync note:', payoutErr);
-  }
-
-  // 4. Instant Studio Expenses & Tranches Sync for Advance Paid
-  const finalAssignmentId = updatedAssignId || savedRow?.id;
-  if (advance > 0 && finalAssignmentId) {
-    try {
-      await syncAssignmentAdvancePayout({
-        workspaceId: params.workspaceId || currentUid,
-        assignmentId: finalAssignmentId,
-        projectId: params.projectId,
-        subEventId: params.subEventId,
-        member: {
-          id: String(params.member.id),
-          name: params.member.name,
-          phone: params.member.phone_number || params.member.phone
-        },
-        clientName: params.clientName,
-        eventName: params.eventName,
-        agreedAmount: agreed,
-        advancePaid: advance,
-        paymentDate: pDate,
-        paymentMethod: pMethod,
-        referenceNo: params.referenceNo,
-        notes: params.notes
-      });
-    } catch (advSyncErr) {
-      console.warn('[crewAssignmentService] syncAssignmentAdvancePayout notice:', advSyncErr);
-    }
-  }
-
-  // 5. Dispatch browser real-time event for zero-latency reactive UI
   if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('team_finance_updated', {
-      detail: {
-        memberId: params.member.id,
-        assignmentId: updatedAssignId,
-        agreedAmount: agreed,
-        paidAmount: advance,
-        balanceDue,
-        payout: payoutPayload
-      }
-    }));
+    window.dispatchEvent(
+      new CustomEvent('team_finance_updated', {
+        detail: {
+          memberId: params.member.id,
+          assignmentId: res.assignmentId,
+          agreedAmount: res.agreedAmount,
+          paidAmount: res.advancePaid,
+          balanceDue: res.balanceDue,
+          payout: res.payout,
+        },
+      })
+    );
+    if ((Number(params.advancePaid) || 0) > 0) {
+      window.dispatchEvent(new CustomEvent('finance_expenses_updated'));
+    }
   }
 
-  return {
-    success: true,
-    assignmentId: updatedAssignId,
-    savedAssignment: savedRow,
-    subEventId: params.subEventId,
-    role: params.assignedRole,
-    agreedAmount: agreed,
-    advancePaid: advance,
-    balanceDue,
-    status: assignStatus
-  };
+  return res;
 }

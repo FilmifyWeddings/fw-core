@@ -287,7 +287,7 @@ export function PremagicLightbox({
   return (
     <div
       ref={containerRef}
-      className="fixed inset-0 z-50 bg-black/95 backdrop-blur-xl flex flex-col justify-between select-none animate-in fade-in duration-150"
+      className="fixed inset-0 z-[100000] bg-black/95 backdrop-blur-xl flex flex-col justify-between select-none animate-in fade-in duration-150"
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
@@ -470,7 +470,7 @@ export function PremagicLightbox({
               {isSelectionSubmitted
                 ? 'Locked (Submitted)'
                 : isSelected
-                ? 'Selected for Album'
+                ? 'Selected'
                 : 'Select Photo'}
             </span>
           </button>

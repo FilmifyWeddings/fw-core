@@ -11,6 +11,7 @@ export interface UploadOptions {
 export interface UploadJob {
   id: string;
   galleryId: string;
+  workspaceId?: string;
   collectionId?: string;
   collectionName: string;
   files: File[];
@@ -171,7 +172,7 @@ export function UploadQueueProvider({ children }: { children: React.ReactNode })
           );
         },
         nextJob.collectionId,
-        undefined,
+        nextJob.workspaceId,
         controller.signal,
         {
           qualityLevel: nextJob.qualityLevel || 100,
@@ -247,6 +248,7 @@ export function UploadQueueProvider({ children }: { children: React.ReactNode })
       const newJob: UploadJob = {
         id: jobId,
         galleryId,
+        workspaceId,
         collectionId: collectionId && collectionId !== 'all' ? collectionId : undefined,
         collectionName: collectionName || 'Default Collection',
         files,

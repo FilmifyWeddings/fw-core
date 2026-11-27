@@ -23,6 +23,61 @@ const isGroupTemplate = (t: { name?: string; category?: string }) => {
   return cat === 'group_alert' || cat === 'group_workflow' || cat === 'group' || nm.startsWith('group_') || nm.includes('group_alert');
 };
 
+// Levenshtein distance helper for fuzzy matching
+function levenshteinDist(a: string, b: string): number {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  const row = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    let prev = i;
+    for (let j = 1; j <= b.length; j++) {
+      const val = a[i - 1] === b[j - 1] ? row[j - 1] : Math.min(row[j - 1], prev, row[j]) + 1;
+      row[j - 1] = prev;
+      prev = val;
+    }
+    row[b.length] = prev;
+  }
+  return row[b.length];
+}
+
+// Smart fuzzy matcher: handles exact matches, substrings, vowel omissions (e.g. 'selction' vs 'selection'), and typos
+function isFuzzyGroupMatch(groupName: string, query: string): boolean {
+  if (!query) return true;
+  const name = (groupName || '').toLowerCase().trim();
+  const q = query.toLowerCase().trim();
+
+  // 1. Direct substring match
+  if (name.includes(q)) return true;
+
+  const qTokens = q.split(/[\s_-]+/).filter(Boolean);
+  const nTokens = name.split(/[\s_-]+/).filter(Boolean);
+
+  const devowel = (s: string) => s.replace(/[aeiou]/g, '');
+
+  const matchToken = (qt: string) => {
+    // Substring in any group token
+    if (nTokens.some(nt => nt.includes(qt) || qt.includes(nt))) return true;
+
+    // Vowel-free skeleton matching (e.g., 'selction' and 'selection' both reduce to 'slctn')
+    const qtDev = devowel(qt);
+    if (qtDev.length >= 2 && nTokens.some(nt => {
+      const ntDev = devowel(nt);
+      return ntDev.includes(qtDev) || qtDev.includes(ntDev);
+    })) {
+      return true;
+    }
+
+    // Levenshtein edit distance <= 2 for words with length >= 4, <= 1 for short words
+    return nTokens.some(nt => {
+      const maxDist = Math.min(2, Math.floor(Math.max(qt.length, nt.length) / 3) + 1);
+      return levenshteinDist(qt, nt) <= maxDist;
+    });
+  };
+
+  return qTokens.every(matchToken);
+}
+
 interface WhatsappWorkflowBuilderProps {
   workspaceId: string;
 }
@@ -153,38 +208,32 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Load Initial Data
-  const fetchSyncedGroups = async () => {
-    setFetchingGroups(true);
+  const fetchSyncedGroups = async (isManual = false) => {
+    if (isManual) setFetchingGroups(true);
     try {
-      // 1. Check local DB chats
-      const { data: dbGroups } = await supabase
-        .from('baileys_chats')
-        .select('jid, display_name, participant_count, is_group')
-        .eq('is_group', true)
-        .order('display_name', { ascending: true });
-
-      if (dbGroups && dbGroups.length > 0) {
-        setSyncedWhatsAppGroups(dbGroups);
-        localStorage.setItem(`wa_synced_groups_${workspaceId}`, JSON.stringify(dbGroups));
-      }
-
-      // 2. Also trigger live fetch from worker
-      const res = await fetch('/api/integrations/baileys/fetch-groups', {
-        method: 'POST',
+      // Fetch groups through backend endpoint which queries both live Baileys worker & SupabaseAdmin (bypassing RLS)
+      const res = await fetch(`/api/integrations/baileys/fetch-groups?workspace_id=${workspaceId}`, {
+        method: 'GET',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ workspace_id: workspaceId })
       });
       const data = await res.json();
-      if (data.success && data.groups && data.groups.length > 0) {
+      if (data.success && Array.isArray(data.groups)) {
         setSyncedWhatsAppGroups(data.groups);
         localStorage.setItem(`wa_synced_groups_${workspaceId}`, JSON.stringify(data.groups));
       }
     } catch (e) {
       console.warn('Error fetching synced WhatsApp groups:', e);
       const cached = localStorage.getItem(`wa_synced_groups_${workspaceId}`);
-      if (cached) setSyncedWhatsAppGroups(JSON.parse(cached));
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setSyncedWhatsAppGroups(prev => prev.length === 0 ? parsed : prev);
+          }
+        } catch {}
+      }
     } finally {
-      setFetchingGroups(false);
+      if (isManual) setFetchingGroups(false);
     }
   };
 
@@ -224,7 +273,7 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
         }
       }
 
-      fetchSyncedGroups();
+      fetchSyncedGroups(false);
     } catch (err) {
       console.warn('Fallback loading workflows from local storage', err);
       const localGroups = localStorage.getItem(`wa_contact_groups_${workspaceId}`);
@@ -241,6 +290,11 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
   useEffect(() => {
     if (workspaceId && workspaceId !== '00000000-0000-0000-0000-000000000000') {
       loadData();
+
+      // Silent background sync every 15s so new groups joined/created on WhatsApp appear automatically
+      const syncInterval = setInterval(() => {
+        fetchSyncedGroups(false);
+      }, 15000);
 
       // Real-time listener for instant group updates in milliseconds
       const channel = supabase
@@ -283,6 +337,7 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
         .subscribe();
 
       return () => {
+        clearInterval(syncInterval);
         supabase.removeChannel(channel);
       };
     }
@@ -424,10 +479,11 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
         status: workflowStatus
       };
 
-      const url = editId
+      const isLocalEdit = editId && editId.startsWith('local-workflow-');
+      const url = editId && !isLocalEdit
         ? `/api/integrations/whatsapp/workflows?tenant_id=${workspaceId}&workflow_id=${editId}`
         : `/api/integrations/whatsapp/workflows?tenant_id=${workspaceId}`;
-      const method = editId ? 'PATCH' : 'POST';
+      const method = editId && !isLocalEdit ? 'PATCH' : 'POST';
 
       const res = await fetch(url, {
         method,
@@ -441,6 +497,15 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
         setName('');
         setTargetGroup('');
         setSteps([]);
+        // Clear local storage fallback if server saved successfully
+        try {
+          const raw = localStorage.getItem(`wa_workflows_${workspaceId}`);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            const cleaned = parsed.filter((w: any) => !w.id?.startsWith('local-workflow-'));
+            localStorage.setItem(`wa_workflows_${workspaceId}`, JSON.stringify(cleaned));
+          }
+        } catch (_) {}
         loadData();
       } else {
         throw new Error(data.error);
@@ -831,7 +896,7 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
                           {/* Trigger */}
                           <td className="px-4 font-mono text-[10px] text-zinc-500 py-3">
                             <span className="bg-slate-100 dark:bg-zinc-800 px-2 py-0.5 rounded border border-slate-200 dark:border-zinc-700">
-                              {targetGroupObj ? 'GROUP_MEMBER_ADDED' : 'LEAD_INGESTED'}
+                              {wf.target_group_id === 'client_selection_submitted' ? 'SELECTION_SUBMITTED' : (targetGroupObj ? 'GROUP_MEMBER_ADDED' : 'LEAD_INGESTED')}
                             </span>
                           </td>
 
@@ -1099,26 +1164,82 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider block">Target Contact Group Trigger</label>
+                <label className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider block">Workflow Trigger Event / Contact Group</label>
                 <select
                   value={targetGroup}
                   required
                   onChange={e => setTargetGroup(e.target.value)}
                   className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 rounded-xl text-xs text-zinc-900 dark:text-zinc-300 focus:outline-none focus:border-emerald-500/60 cursor-pointer shadow-sm"
                 >
-                  {groups.length === 0 ? (
-                    <option value="">No Contact Groups Found - Create One First</option>
-                  ) : (
-                    <>
-                      {!targetGroup && <option value="">Select Target Contact Group...</option>}
-                      {groups.map(g => (
-                        <option key={g.id} value={g.id}>{g.group_name} (Group Added Trigger)</option>
-                      ))}
-                    </>
-                  )}
+                  {!targetGroup && <option value="">Select Trigger Event or Contact Group...</option>}
+                  <optgroup label="⚡ Gallery & Album Triggers">
+                    <option value="client_selection_submitted">
+                      🎯 Client Photo Selection Submitted (Album Trigger)
+                    </option>
+                  </optgroup>
+                  <optgroup label="👥 Contact Group Triggers">
+                    {groups.map(g => (
+                      <option key={g.id} value={g.id}>{g.group_name} (Group Added Trigger)</option>
+                    ))}
+                    {groups.length === 0 && (
+                      <option value="" disabled>No contact groups created yet</option>
+                    )}
+                  </optgroup>
                 </select>
               </div>
             </div>
+
+            {/* Variable banner if selection trigger is active */}
+            {targetGroup === 'client_selection_submitted' && (
+              <div className="p-4 bg-emerald-500/5 dark:bg-emerald-500/10 border border-emerald-500/30 rounded-2xl text-xs space-y-2.5 shadow-xs">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 font-bold text-emerald-700 dark:text-emerald-400">
+                    <Sparkles className="w-4 h-4 text-emerald-500" />
+                    <span>Trigger Active: Client Photo Selection Submitted</span>
+                  </div>
+                  <span className="text-[9px] font-mono font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-300 dark:border-emerald-800">
+                    Album Event
+                  </span>
+                </div>
+                <p className="text-[11px] text-zinc-600 dark:text-zinc-300 leading-relaxed">
+                  When a client completes and submits their photo selection, this workflow triggers automatically. You can send to a <strong>WhatsApp Group Channel</strong> (e.g. Studio Alerts group) or <strong>Client Direct Chat</strong>.
+                </p>
+                <div>
+                  <span className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider block mb-1">
+                    Available Template Variables (Auto-Replaced):
+                  </span>
+                  <div className="text-[10px] font-mono flex flex-wrap gap-1.5">
+                    <span className="bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200 px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-800 shadow-xs">
+                      <strong className="text-emerald-600 dark:text-emerald-400">&#123;&#123;card_name&#125;&#125;</strong>: Card/Event Name
+                    </span>
+                    <span className="bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200 px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-800 shadow-xs">
+                      <strong className="text-emerald-600 dark:text-emerald-400">&#123;&#123;client_name&#125;&#125;</strong>: Client Name
+                    </span>
+                    <span className="bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200 px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-800 shadow-xs">
+                      <strong className="text-emerald-600 dark:text-emerald-400">&#123;&#123;client_email&#125;&#125;</strong>: Client Email
+                    </span>
+                    <span className="bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200 px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-800 shadow-xs">
+                      <strong className="text-emerald-600 dark:text-emerald-400">&#123;&#123;selected_count&#125;&#125;</strong>: Selected Count
+                    </span>
+                    <span className="bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200 px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-800 shadow-xs">
+                      <strong className="text-emerald-600 dark:text-emerald-400">&#123;&#123;selection_limit&#125;&#125;</strong>: Limit
+                    </span>
+                    <span className="bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200 px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-800 shadow-xs">
+                      <strong className="text-emerald-600 dark:text-emerald-400">&#123;&#123;selected_photos&#125;&#125;</strong>: Count &amp; Limit Text
+                    </span>
+                    <span className="bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200 px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-800 shadow-xs">
+                      <strong className="text-emerald-600 dark:text-emerald-400">&#123;&#123;submission_date&#125;&#125;</strong>: 12 November 2026
+                    </span>
+                    <span className="bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200 px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-800 shadow-xs">
+                      <strong className="text-emerald-600 dark:text-emerald-400">&#123;&#123;submission_time&#125;&#125;</strong>: 12:30 PM
+                    </span>
+                    <span className="bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200 px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-800 shadow-xs">
+                      <strong className="text-emerald-600 dark:text-emerald-400">&#123;&#123;selection_url&#125;&#125;</strong>: Direct StudioCore Link
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Workflow Card Nodes Stack */}
             <div className="space-y-5">
@@ -1136,11 +1257,13 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
                 <div className="space-y-4">
                   {steps.map((step, index) => {
                     const isGroupTarget = step.target_type === 'group';
+                    const liveMatchedGroup = syncedWhatsAppGroups.find(g => g.jid === step.target_group_jid);
+                    const effectiveDisplayGroupName = liveMatchedGroup?.display_name || step.target_group_name;
 
-                    // Group search filter (search by group name only, NO JID!)
-                    const gQuery = (groupSearchQueries[index] || '').toLowerCase().trim();
+                    // Group search filter (fuzzy search supporting typos, vowels, and skeletons)
+                    const gQuery = (groupSearchQueries[index] || '').trim();
                     const filteredGroupsForStep = syncedWhatsAppGroups.filter(g =>
-                      (g.display_name || '').toLowerCase().includes(gQuery)
+                      isFuzzyGroupMatch(g.display_name, gQuery)
                     );
 
                     // Channel-specific template list (strictly separated)
@@ -1386,7 +1509,7 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
 
                                 <button
                                   type="button"
-                                  onClick={fetchSyncedGroups}
+                                  onClick={() => fetchSyncedGroups(true)}
                                   disabled={fetchingGroups}
                                   className="flex items-center gap-1 text-[9px] font-bold text-orange-600 dark:text-orange-400 hover:underline cursor-pointer disabled:opacity-50"
                                   title="Refresh live groups directly from WhatsApp"
@@ -1402,7 +1525,11 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
                                   type="button"
                                   onClick={() => {
                                     setOpenTemplateDropdownIndex(null);
-                                    setOpenGroupDropdownIndex(openGroupDropdownIndex === index ? null : index);
+                                    const nextOpen = openGroupDropdownIndex === index ? null : index;
+                                    setOpenGroupDropdownIndex(nextOpen);
+                                    if (nextOpen !== null) {
+                                      fetchSyncedGroups(false);
+                                    }
                                   }}
                                   className={`w-full px-3 py-2.5 bg-white dark:bg-zinc-950 border rounded-xl text-xs flex items-center justify-between transition-all cursor-pointer shadow-xs ${
                                     openGroupDropdownIndex === index
@@ -1412,8 +1539,8 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
                                 >
                                   <div className="flex items-center gap-2 truncate pr-2">
                                     <Users className="w-4 h-4 text-orange-500 shrink-0" />
-                                    <span className={`truncate font-medium ${step.target_group_name ? 'text-zinc-900 dark:text-white font-semibold' : 'text-zinc-400'}`}>
-                                      {step.target_group_name || '-- Choose WhatsApp Group --'}
+                                    <span className={`truncate font-medium ${effectiveDisplayGroupName ? 'text-zinc-900 dark:text-white font-semibold' : 'text-zinc-400'}`}>
+                                      {effectiveDisplayGroupName || '-- Choose WhatsApp Group --'}
                                     </span>
                                   </div>
                                   <ChevronDown className={`w-4 h-4 text-zinc-400 transition-transform duration-200 shrink-0 ${openGroupDropdownIndex === index ? 'rotate-180 text-orange-500' : ''}`} />
@@ -1493,14 +1620,14 @@ export function WhatsappWorkflowBuilder({ workspaceId }: WhatsappWorkflowBuilder
                               </div>
 
                               {/* Selected Group Active Target Display (ZERO GID Strings Shown) */}
-                              {step.target_group_name && (
+                              {effectiveDisplayGroupName && (
                                 <div className="flex items-center justify-between text-xs bg-white dark:bg-zinc-900/90 px-3.5 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-xs">
                                   <span className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-bold">
                                     <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-                                    Active Target: <span className="font-sans font-extrabold text-zinc-900 dark:text-white">{step.target_group_name}</span>
+                                    Active Target: <span className="font-sans font-extrabold text-zinc-900 dark:text-white">{effectiveDisplayGroupName}</span>
                                   </span>
                                   <span className="text-[10px] font-semibold text-zinc-400">
-                                    {syncedWhatsAppGroups.find(g => g.jid === step.target_group_jid)?.participant_count || 0} members
+                                    {liveMatchedGroup?.participant_count ?? (syncedWhatsAppGroups.find(g => g.jid === step.target_group_jid)?.participant_count || 0)} members
                                   </span>
                                 </div>
                               )}

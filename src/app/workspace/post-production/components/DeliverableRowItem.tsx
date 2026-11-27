@@ -3,7 +3,8 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Camera, Video, BookOpen, Calendar, Trash2, Edit3, 
-  MessageSquare, Link2, Check, Sparkles, Plus, IndianRupee, ExternalLink
+  MessageSquare, Link2, Check, Sparkles, Plus, IndianRupee, ExternalLink,
+  Printer, Palette
 } from 'lucide-react';
 import { PostProductionDeliverable } from './DeliverableCategorySection';
 import Searchable3DCreamSelect, { Searchable3DCreamSelectOption } from '@/components/ui/Searchable3DCreamSelect';
@@ -76,8 +77,69 @@ export default function DeliverableRowItem({
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
+  const [isAssignPrintingModalOpen, setIsAssignPrintingModalOpen] = useState(false);
   const [isAttachLinksModalOpen, setIsAttachLinksModalOpen] = useState(false);
   const datePickerRef = useRef<HTMLInputElement | null>(null);
+  const printingDatePickerRef = useRef<HTMLInputElement | null>(null);
+
+  const isAlbum = item.category?.toLowerCase() === 'albums' || 
+    /album|photobook|photo book|magazine/i.test(item.title || '') || 
+    /album/i.test(item.category || '');
+
+  const printingDueDateStr = item.printing_due_date || item.printing_deadline || '';
+  const printingStatus = item.printing_status || 'Pending';
+
+  const printingDeadlineInfo = (() => {
+    if (!printingDueDateStr) return null;
+    const due = new Date(printingDueDateStr);
+    if (isNaN(due.getTime())) return null;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    due.setHours(0, 0, 0, 0);
+
+    const diffDays = Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    const isPrinted = (printingStatus || '').toLowerCase().includes('deliver') || (printingStatus || '').toLowerCase().includes('printed');
+
+    if (isPrinted) {
+      return {
+        label: printingStatus,
+        className: 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800',
+        isOverdue: false,
+      };
+    }
+
+    if (diffDays < 0) {
+      return {
+        label: `Overdue ${Math.abs(diffDays)}d`,
+        className: 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 animate-pulse font-black',
+        isOverdue: true,
+      };
+    }
+
+    if (diffDays === 0) {
+      return {
+        label: 'Due Today',
+        className: 'bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 font-black',
+        isOverdue: false,
+      };
+    }
+
+    return {
+      label: `${diffDays}d left`,
+      className: 'bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300 border border-stone-200 dark:border-stone-700 font-bold',
+      isOverdue: false,
+    };
+  })();
+
+  const PRINTING_STATUS_OPTIONS = useMemo(() => [
+    { value: 'Pending', label: 'Pending / Not Sent' },
+    { value: 'Sent for Printing', label: 'Sent for Printing' },
+    { value: 'Printing In Progress', label: 'Printing In Progress' },
+    { value: 'Quality Check', label: 'Quality Check' },
+    { value: 'Dispatched', label: 'Dispatched / Shipped' },
+    { value: 'Delivered', label: 'Delivered / Completed' },
+  ], []);
 
   // Dynamic workflow statuses loaded synchronously from memory cache (0ms)
   const [ppStatuses, setPpStatuses] = useState<PostProductionStatusSetting[]>(() => {
@@ -373,192 +435,565 @@ export default function DeliverableRowItem({
       </div>
 
       {/* ── 2. EXACT HORIZONTAL LINE CONTROLS CLUSTER (ALIGNABLE COLUMNS) ── */}
-      <div className="flex items-center gap-2.5 lg:gap-3 shrink-0 flex-nowrap overflow-x-auto pb-1 xl:pb-0">
-        {/* Column 1: Assignee Selector (Unified In-House & Freelancer Dropdown) */}
-        <div className="w-44 sm:w-52 shrink-0">
-          <UnifiedTeamAssignDropdown
-            selectedId={item.assigned_member_id}
-            selectedName={item.assigned_to}
-            disabled={!canManage}
-            teamMembers={teamMembers}
-            labelPrefix=""
-            placeholder="+ Assign Editor"
-            searchPlaceholder="Search team member..."
-            size="sm"
-            variant="select-input"
-            onSelect={(mem) => {
-              if (!canManage) return;
-              if (!mem.id && !mem.name) {
-                if (onUpdateItemFields) {
-                  onUpdateItemFields(item.id, { 
-                    assigned_member_id: null, 
-                    assigned_to: null,
-                    agreed_amount: 0,
-                    paid_amount: 0,
-                    balance_amount: 0
-                  });
-                } else {
-                  onUpdateItem(item.id, 'assigned_member_id', null);
-                  onUpdateItem(item.id, 'assigned_to', null);
-                }
-              } else {
-                const assigned_member_id = mem.id || null;
-                const assigned_to = mem.name || null;
+      {isAlbum ? (
+        <div className="flex flex-col gap-2 shrink-0 w-full xl:w-auto">
+          {/* SUB-ROW 1: DESIGNING (डिजाइनिंग) */}
+          <div className="flex items-center gap-2.5 lg:gap-3 shrink-0 flex-nowrap overflow-x-auto pb-0.5">
+            <span className="px-2 py-1 rounded-md text-[9px] font-black uppercase tracking-wider bg-amber-100 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-700 shrink-0 flex items-center gap-1 shadow-2xs">
+              <Palette className="w-2.5 h-2.5 text-amber-700 dark:text-amber-400" />
+              <span>Design</span>
+            </span>
 
-                if (onUpdateItemFields) {
-                  onUpdateItemFields(item.id, { assigned_member_id, assigned_to });
-                } else {
-                  onUpdateItem(item.id, 'assigned_member_id', assigned_member_id);
-                  onUpdateItem(item.id, 'assigned_to', assigned_to);
+            {/* Column 1: Assign Designer */}
+            <div className="w-44 sm:w-52 shrink-0">
+              <UnifiedTeamAssignDropdown
+                selectedId={item.assigned_member_id}
+                selectedName={item.assigned_to}
+                disabled={!canManage}
+                teamMembers={teamMembers}
+                labelPrefix="Designer:"
+                placeholder="+ Assign Designer"
+                searchPlaceholder="Search designer..."
+                size="sm"
+                variant="select-input"
+                onSelect={(mem) => {
+                  if (!canManage) return;
+                  if (!mem.id && !mem.name) {
+                    if (onUpdateItemFields) {
+                      onUpdateItemFields(item.id, { 
+                        assigned_member_id: null, 
+                        assigned_to: null,
+                        agreed_amount: 0,
+                        paid_amount: 0,
+                        balance_amount: 0
+                      });
+                    } else {
+                      onUpdateItem(item.id, 'assigned_member_id', null);
+                      onUpdateItem(item.id, 'assigned_to', null);
+                    }
+                  } else {
+                    const assigned_member_id = mem.id || null;
+                    const assigned_to = mem.name || null;
+
+                    if (onUpdateItemFields) {
+                      onUpdateItemFields(item.id, { assigned_member_id, assigned_to });
+                    } else {
+                      onUpdateItem(item.id, 'assigned_member_id', assigned_member_id);
+                      onUpdateItem(item.id, 'assigned_to', assigned_to);
+                    }
+
+                    if (assigned_member_id && assigned_to) {
+                      saveVendorAlbumOrder(workspaceId || 'ws_default', {
+                        partner_id: assigned_member_id,
+                        partner_name: assigned_to,
+                        client_name: clientName || 'Client Project',
+                        deliverable_id: item.id,
+                        category: 'album_design',
+                        album_type: item.title,
+                        item_title: item.title,
+                        due_date: item.due_date || item.deadline || '',
+                        order_status: item.status || 'Pending',
+                        total_amount: Number(item.agreed_amount) || 0,
+                        paid_amount: Number(item.paid_amount) || 0,
+                      }).catch(() => {});
+                    }
+
+                    setIsAssignModalOpen(true);
+                  }
+                }}
+              />
+            </div>
+
+            {/* Column 2: Designer Due Date & Countdown Status */}
+            <div className="w-48 sm:w-52 shrink-0 flex items-center gap-1.5">
+              <div 
+                onClick={() => {
+                  if (canEditStatusAndDate) {
+                    datePickerRef.current?.showPicker?.() || datePickerRef.current?.focus();
+                  }
+                }}
+                className={`relative flex items-center gap-1.5 bg-white dark:bg-stone-900 px-2.5 py-1.5 rounded-xl border border-[#EAE5DA] dark:border-stone-700 text-xs shadow-2xs ${canEditStatusAndDate ? 'cursor-pointer hover:border-amber-400' : 'cursor-default'} transition flex-1 min-w-0`}
+                title={canEditStatusAndDate ? 'Click to select designer due date' : undefined}
+              >
+                <Calendar className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0 pointer-events-none" />
+                <input
+                  ref={datePickerRef}
+                  type="date"
+                  disabled={!canEditStatusAndDate}
+                  value={dueDateStr}
+                  onChange={(e) => {
+                    if (!canEditStatusAndDate) return;
+                    const dateVal = e.target.value;
+                    if (onUpdateItemFields) {
+                      onUpdateItemFields(item.id, { due_date: dateVal, deadline: dateVal });
+                    } else {
+                      onUpdateItem(item.id, 'due_date', dateVal);
+                      onUpdateItem(item.id, 'deadline', dateVal);
+                    }
+                  }}
+                  className={`bg-transparent text-[11px] font-bold text-slate-700 dark:text-stone-200 focus:outline-none ${canEditStatusAndDate ? 'cursor-pointer' : 'cursor-default'} w-full [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full ${canEditStatusAndDate ? '[&::-webkit-calendar-picker-indicator]:cursor-pointer' : ''}`}
+                />
+              </div>
+
+              {deadlineInfo && (
+                <span className={`px-2 py-1 rounded-lg text-[10px] font-black border shadow-2xs whitespace-nowrap shrink-0 ${deadlineInfo.className}`}>
+                  {deadlineInfo.label}
+                </span>
+              )}
+            </div>
+
+            {/* Column 3: Designer Status Dropdown */}
+            <div className="w-36 sm:w-44 shrink-0">
+              <ThreeDStatusSelect
+                currentStatus={currentStatus}
+                statuses={ppStatuses}
+                workspaceId={workspaceId || 'ws_default'}
+                disabled={!canEditStatusAndDate}
+                onChange={(val) => {
+                  if (!canEditStatusAndDate) return;
+                  if (onUpdateItemFields) {
+                    onUpdateItemFields(item.id, { status: val });
+                  } else {
+                    onUpdateItem(item.id, 'status', val);
+                  }
+                  if (item.assigned_member_id) {
+                    saveVendorAlbumOrder(workspaceId || 'ws_default', {
+                      partner_id: item.assigned_member_id,
+                      partner_name: item.assigned_to || '',
+                      client_name: clientName || 'Client Project',
+                      deliverable_id: item.id,
+                      category: 'album_design',
+                      item_title: item.title,
+                      order_status: val,
+                    }).catch(() => {});
+                  }
+                }}
+              />
+            </div>
+
+            {/* Column 4: Action Icons for Designer & Deliverable */}
+            <div className="flex items-center gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={() => onOpenComments(item.id, item.title)}
+                title="Activity notes & revisions"
+                className="px-2 py-1.5 rounded-lg border border-[#EAE5DA] dark:border-stone-700 bg-white dark:bg-stone-800 text-slate-600 dark:text-stone-300 hover:text-amber-700 hover:border-amber-400 transition cursor-pointer flex items-center gap-1 shadow-2xs text-[11px]"
+              >
+                <MessageSquare className="w-3.5 h-3.5 text-amber-600" />
+                <span className="font-black">{commentCount}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsAttachLinksModalOpen(true)}
+                title={
+                  (item.drive_links && item.drive_links.length > 0)
+                    ? `${item.drive_links.length} attached link(s)`
+                    : item.drive_link
+                    ? 'Manage Links & Drive'
+                    : 'Attach Links (Drive, Review, Preview)'
                 }
-                // Automatically open Assign Commercials Modal for the selected member
-                setIsAssignModalOpen(true);
-              }
-            }}
-          />
+                className={`px-2 py-1.5 rounded-lg border transition cursor-pointer text-xs flex items-center gap-1 shadow-2xs ${
+                  (item.drive_links && item.drive_links.length > 0) || item.drive_link
+                    ? 'bg-amber-100/70 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200' 
+                    : 'bg-white dark:bg-stone-800 border-[#EAE5DA] dark:border-stone-700 text-slate-400 hover:text-amber-700'
+                }`}
+              >
+                <Link2 className="w-3.5 h-3.5" />
+                {((item.drive_links?.length || 0) > 0) && (
+                  <span className="font-black text-[10px]">{item.drive_links?.length}</span>
+                )}
+              </button>
+
+              {canManage && (
+                <button
+                  type="button"
+                  onClick={() => setIsEditingTitle(true)}
+                  title="Edit Title"
+                  className="p-1.5 rounded-lg border border-[#EAE5DA] dark:border-stone-700 bg-white dark:bg-stone-800 text-slate-400 hover:text-amber-600 hover:border-amber-300 transition cursor-pointer"
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                </button>
+              )}
+
+              {canManage && (item.assigned_member_id || item.assigned_to) && (
+                <button
+                  type="button"
+                  onClick={() => setIsAssignModalOpen(true)}
+                  title="Designer Fee & Commercials"
+                  className="p-1.5 rounded-lg border border-[#EAE5DA] dark:border-stone-700 bg-white dark:bg-stone-800 text-amber-700 dark:text-amber-400 hover:text-amber-800 hover:border-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30 transition cursor-pointer"
+                >
+                  <IndianRupee className="w-3.5 h-3.5" />
+                </button>
+              )}
+
+              {canManage && (
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteConfirm(true)}
+                  title="Delete item"
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* SUB-ROW 2: PRINTING (प्रिंटिंग) */}
+          <div className="flex items-center gap-2.5 lg:gap-3 shrink-0 flex-nowrap overflow-x-auto pt-1.5 border-t border-dashed border-stone-200/90 dark:border-stone-800">
+            <span className="px-2 py-1 rounded-md text-[9px] font-black uppercase tracking-wider bg-purple-100 dark:bg-purple-950/40 text-purple-900 dark:text-purple-200 border border-purple-300 dark:border-purple-700 shrink-0 flex items-center gap-1 shadow-2xs">
+              <Printer className="w-2.5 h-2.5 text-purple-700 dark:text-purple-400" />
+              <span>Print</span>
+            </span>
+
+            {/* Column 1: Assign Printer / Lab */}
+            <div className="w-44 sm:w-52 shrink-0">
+              <UnifiedTeamAssignDropdown
+                selectedId={item.printer_id}
+                selectedName={item.printer_name}
+                disabled={!canManage}
+                teamMembers={teamMembers}
+                labelPrefix="Printer:"
+                placeholder="+ Assign Printer / Lab"
+                searchPlaceholder="Search print partner / lab..."
+                size="sm"
+                variant="select-input"
+                onSelect={(mem) => {
+                  if (!canManage) return;
+                  if (!mem.id && !mem.name) {
+                    if (onUpdateItemFields) {
+                      onUpdateItemFields(item.id, { 
+                        printer_id: null, 
+                        printer_name: null,
+                        printing_agreed_amount: 0,
+                        printing_paid_amount: 0,
+                        printing_balance_amount: 0
+                      });
+                    } else {
+                      onUpdateItem(item.id, 'printer_id' as any, null);
+                      onUpdateItem(item.id, 'printer_name' as any, null);
+                    }
+                  } else {
+                    const printer_id = mem.id || null;
+                    const printer_name = mem.name || null;
+
+                    if (onUpdateItemFields) {
+                      onUpdateItemFields(item.id, { printer_id, printer_name });
+                    } else {
+                      onUpdateItem(item.id, 'printer_id' as any, printer_id);
+                      onUpdateItem(item.id, 'printer_name' as any, printer_name);
+                    }
+
+                    if (printer_id && printer_name) {
+                      saveVendorAlbumOrder(workspaceId || 'ws_default', {
+                        partner_id: printer_id,
+                        partner_name: printer_name,
+                        client_name: clientName || 'Client Project',
+                        deliverable_id: item.id,
+                        category: 'album_printing',
+                        album_type: item.title,
+                        item_title: item.title,
+                        due_date: item.printing_due_date || item.printing_deadline || '',
+                        order_status: item.printing_status || 'Pending',
+                        total_amount: Number(item.printing_agreed_amount) || 0,
+                        paid_amount: Number(item.printing_paid_amount) || 0,
+                      }).catch(() => {});
+                    }
+
+                    setIsAssignPrintingModalOpen(true);
+                  }
+                }}
+              />
+            </div>
+
+            {/* Column 2: Printing Due Date & Countdown Status */}
+            <div className="w-48 sm:w-52 shrink-0 flex items-center gap-1.5">
+              <div 
+                onClick={() => {
+                  if (canEditStatusAndDate) {
+                    printingDatePickerRef.current?.showPicker?.() || printingDatePickerRef.current?.focus();
+                  }
+                }}
+                className={`relative flex items-center gap-1.5 bg-white dark:bg-stone-900 px-2.5 py-1.5 rounded-xl border border-purple-200 dark:border-stone-700 text-xs shadow-2xs ${canEditStatusAndDate ? 'cursor-pointer hover:border-purple-400' : 'cursor-default'} transition flex-1 min-w-0`}
+                title={canEditStatusAndDate ? 'Click to select printing due date' : undefined}
+              >
+                <Calendar className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 shrink-0 pointer-events-none" />
+                <input
+                  ref={printingDatePickerRef}
+                  type="date"
+                  disabled={!canEditStatusAndDate}
+                  value={printingDueDateStr}
+                  onChange={(e) => {
+                    if (!canEditStatusAndDate) return;
+                    const dateVal = e.target.value;
+                    if (onUpdateItemFields) {
+                      onUpdateItemFields(item.id, { printing_due_date: dateVal, printing_deadline: dateVal });
+                    } else {
+                      onUpdateItem(item.id, 'printing_due_date' as any, dateVal);
+                    }
+                    if (item.printer_id) {
+                      saveVendorAlbumOrder(workspaceId || 'ws_default', {
+                        partner_id: item.printer_id,
+                        partner_name: item.printer_name || '',
+                        client_name: clientName || 'Client Project',
+                        deliverable_id: item.id,
+                        category: 'album_printing',
+                        due_date: dateVal,
+                        order_status: item.printing_status || 'Pending',
+                      }).catch(() => {});
+                    }
+                  }}
+                  className={`bg-transparent text-[11px] font-bold text-slate-700 dark:text-stone-200 focus:outline-none ${canEditStatusAndDate ? 'cursor-pointer' : 'cursor-default'} w-full [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full ${canEditStatusAndDate ? '[&::-webkit-calendar-picker-indicator]:cursor-pointer' : ''}`}
+                />
+              </div>
+
+              {printingDeadlineInfo && (
+                <span className={`px-2 py-1 rounded-lg text-[10px] font-black border shadow-2xs whitespace-nowrap shrink-0 ${printingDeadlineInfo.className}`}>
+                  {printingDeadlineInfo.label}
+                </span>
+              )}
+            </div>
+
+            {/* Column 3: Printing Status Dropdown */}
+            <div className="w-36 sm:w-44 shrink-0">
+              <select
+                disabled={!canEditStatusAndDate}
+                value={printingStatus}
+                onChange={(e) => {
+                  if (!canEditStatusAndDate) return;
+                  const newStatus = e.target.value;
+                  if (onUpdateItemFields) {
+                    onUpdateItemFields(item.id, { printing_status: newStatus });
+                  } else {
+                    onUpdateItem(item.id, 'printing_status' as any, newStatus);
+                  }
+                  if (item.printer_id) {
+                    saveVendorAlbumOrder(workspaceId || 'ws_default', {
+                      partner_id: item.printer_id,
+                      partner_name: item.printer_name || '',
+                      client_name: clientName || 'Client Project',
+                      deliverable_id: item.id,
+                      category: 'album_printing',
+                      order_status: newStatus,
+                    }).catch(() => {});
+                  }
+                }}
+                className="w-full px-2.5 py-1.5 rounded-xl border border-purple-200 dark:border-stone-700 bg-white dark:bg-stone-900 text-purple-950 dark:text-purple-200 text-xs font-bold shadow-2xs focus:outline-none focus:border-purple-400 cursor-pointer"
+              >
+                {PRINTING_STATUS_OPTIONS.map(opt => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Column 4: Printing Fee Commercials Button */}
+            <div className="flex items-center gap-1 shrink-0">
+              {canManage && (item.printer_id || item.printer_name) && (
+                <button
+                  type="button"
+                  onClick={() => setIsAssignPrintingModalOpen(true)}
+                  title="Printing Commercials & Fee"
+                  className="px-2 py-1.5 rounded-lg border border-purple-200 dark:border-stone-700 bg-white dark:bg-stone-800 text-purple-700 dark:text-purple-300 hover:text-purple-900 hover:border-purple-400 hover:bg-purple-50 dark:hover:bg-purple-950/30 transition cursor-pointer flex items-center gap-1 text-[11px] font-black shadow-2xs"
+                >
+                  <IndianRupee className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Print Fee</span>
+                </button>
+              )}
+            </div>
+          </div>
         </div>
-
-        {/* Column 2: Due Date & Countdown Status (Clean width w-48 sm:w-52, direct box click) */}
-        <div className="w-48 sm:w-52 shrink-0 flex items-center gap-1.5">
-          <div 
-            onClick={() => {
-              if (canEditStatusAndDate) {
-                datePickerRef.current?.showPicker?.() || datePickerRef.current?.focus();
-              }
-            }}
-            className={`relative flex items-center gap-1.5 bg-white dark:bg-stone-900 px-2.5 py-1.5 rounded-xl border border-[#EAE5DA] dark:border-stone-700 text-xs shadow-2xs ${canEditStatusAndDate ? 'cursor-pointer hover:border-amber-400' : 'cursor-default'} transition flex-1 min-w-0`}
-            title={canEditStatusAndDate ? 'Click to select due date' : undefined}
-          >
-            <Calendar className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0 pointer-events-none" />
-            <input
-              ref={datePickerRef}
-              type="date"
-              disabled={!canEditStatusAndDate}
-              value={dueDateStr}
-              onChange={(e) => {
-                if (!canEditStatusAndDate) return;
-                const dateVal = e.target.value;
-                if (onUpdateItemFields) {
-                  onUpdateItemFields(item.id, { due_date: dateVal, deadline: dateVal });
+      ) : (
+        /* STANDARD SINGLE ROW FOR NON-ALBUM DELIVERABLES */
+        <div className="flex items-center gap-2.5 lg:gap-3 shrink-0 flex-nowrap overflow-x-auto pb-1 xl:pb-0">
+          {/* Column 1: Assignee Selector (Unified In-House, Freelancer & Vendor Dropdown) */}
+          <div className="w-44 sm:w-52 shrink-0">
+            <UnifiedTeamAssignDropdown
+              selectedId={item.assigned_member_id}
+              selectedName={item.assigned_to}
+              disabled={!canManage}
+              teamMembers={teamMembers}
+              labelPrefix=""
+              placeholder="+ Assign Editor"
+              searchPlaceholder="Search team member..."
+              size="sm"
+              variant="select-input"
+              onSelect={(mem) => {
+                if (!canManage) return;
+                if (!mem.id && !mem.name) {
+                  if (onUpdateItemFields) {
+                    onUpdateItemFields(item.id, { 
+                      assigned_member_id: null, 
+                      assigned_to: null,
+                      agreed_amount: 0,
+                      paid_amount: 0,
+                      balance_amount: 0
+                    });
+                  } else {
+                    onUpdateItem(item.id, 'assigned_member_id', null);
+                    onUpdateItem(item.id, 'assigned_to', null);
+                  }
                 } else {
-                  onUpdateItem(item.id, 'due_date', dateVal);
-                  onUpdateItem(item.id, 'deadline', dateVal);
+                  const assigned_member_id = mem.id || null;
+                  const assigned_to = mem.name || null;
+
+                  if (onUpdateItemFields) {
+                    onUpdateItemFields(item.id, { assigned_member_id, assigned_to });
+                  } else {
+                    onUpdateItem(item.id, 'assigned_member_id', assigned_member_id);
+                    onUpdateItem(item.id, 'assigned_to', assigned_to);
+                  }
+                  // Automatically open Assign Commercials Modal for the selected member
+                  setIsAssignModalOpen(true);
                 }
               }}
-              className={`bg-transparent text-[11px] font-bold text-slate-700 dark:text-stone-200 focus:outline-none ${canEditStatusAndDate ? 'cursor-pointer' : 'cursor-default'} w-full [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full ${canEditStatusAndDate ? '[&::-webkit-calendar-picker-indicator]:cursor-pointer' : ''}`}
             />
           </div>
 
-          {deadlineInfo && (
-            <span className={`px-2 py-1 rounded-lg text-[10px] font-black border shadow-2xs whitespace-nowrap shrink-0 ${deadlineInfo.className}`}>
-              {deadlineInfo.label}
-            </span>
-          )}
-        </div>
+          {/* Column 2: Due Date & Countdown Status */}
+          <div className="w-48 sm:w-52 shrink-0 flex items-center gap-1.5">
+            <div 
+              onClick={() => {
+                if (canEditStatusAndDate) {
+                  datePickerRef.current?.showPicker?.() || datePickerRef.current?.focus();
+                }
+              }}
+              className={`relative flex items-center gap-1.5 bg-white dark:bg-stone-900 px-2.5 py-1.5 rounded-xl border border-[#EAE5DA] dark:border-stone-700 text-xs shadow-2xs ${canEditStatusAndDate ? 'cursor-pointer hover:border-amber-400' : 'cursor-default'} transition flex-1 min-w-0`}
+              title={canEditStatusAndDate ? 'Click to select due date' : undefined}
+            >
+              <Calendar className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0 pointer-events-none" />
+              <input
+                ref={datePickerRef}
+                type="date"
+                disabled={!canEditStatusAndDate}
+                value={dueDateStr}
+                onChange={(e) => {
+                  if (!canEditStatusAndDate) return;
+                  const dateVal = e.target.value;
+                  if (onUpdateItemFields) {
+                    onUpdateItemFields(item.id, { due_date: dateVal, deadline: dateVal });
+                  } else {
+                    onUpdateItem(item.id, 'due_date', dateVal);
+                    onUpdateItem(item.id, 'deadline', dateVal);
+                  }
+                }}
+                className={`bg-transparent text-[11px] font-bold text-slate-700 dark:text-stone-200 focus:outline-none ${canEditStatusAndDate ? 'cursor-pointer' : 'cursor-default'} w-full [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full ${canEditStatusAndDate ? '[&::-webkit-calendar-picker-indicator]:cursor-pointer' : ''}`}
+              />
+            </div>
 
-        {/* Column 3: Status Dropdown (Dynamic from Post Production Settings) */}
-        <div className="w-36 sm:w-44 shrink-0">
-          <ThreeDStatusSelect
-            currentStatus={currentStatus}
-            statuses={ppStatuses}
-            workspaceId={workspaceId || 'ws_default'}
-            disabled={!canEditStatusAndDate}
-            onChange={(val) => {
-              if (!canEditStatusAndDate) return;
-              if (onUpdateItemFields) {
-                onUpdateItemFields(item.id, { status: val });
-              } else {
-                onUpdateItem(item.id, 'status', val);
-              }
-              if (item.assigned_member_id) {
-                const cat = detectDeliverableCategory(item.category, item.title);
-                saveVendorAlbumOrder(workspaceId || 'ws_default', {
-                  partner_id: item.assigned_member_id,
-                  partner_name: item.assigned_to || '',
-                  client_name: clientName || 'Client Project',
-                  deliverable_id: item.id,
-                  category: cat,
-                  item_title: item.title,
-                  order_status: val,
-                }).catch(() => {});
-              }
-            }}
-          />
-        </div>
-
-        {/* Column 4: Action Icons */}
-        <div className="flex items-center gap-1 shrink-0">
-          {/* Comments Button */}
-          <button
-            type="button"
-            onClick={() => onOpenComments(item.id, item.title)}
-            title="Activity notes & revisions"
-            className="px-2 py-1.5 rounded-lg border border-[#EAE5DA] dark:border-stone-700 bg-white dark:bg-stone-800 text-slate-600 dark:text-stone-300 hover:text-amber-700 hover:border-amber-400 transition cursor-pointer flex items-center gap-1 shadow-2xs text-[11px]"
-          >
-            <MessageSquare className="w-3.5 h-3.5 text-amber-600" />
-            <span className="font-black">{commentCount}</span>
-          </button>
-
-          {/* Drive & Review Links modal trigger */}
-          <button
-            type="button"
-            onClick={() => setIsAttachLinksModalOpen(true)}
-            title={
-              (item.drive_links && item.drive_links.length > 0)
-                ? `${item.drive_links.length} attached link(s)`
-                : item.drive_link
-                ? 'Manage Links & Drive'
-                : 'Attach Links (Drive, Review, Preview)'
-            }
-            className={`px-2 py-1.5 rounded-lg border transition cursor-pointer text-xs flex items-center gap-1 shadow-2xs ${
-              (item.drive_links && item.drive_links.length > 0) || item.drive_link
-                ? 'bg-amber-100/70 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200' 
-                : 'bg-white dark:bg-stone-800 border-[#EAE5DA] dark:border-stone-700 text-slate-400 hover:text-amber-700'
-            }`}
-          >
-            <Link2 className="w-3.5 h-3.5" />
-            {((item.drive_links?.length || 0) > 0) && (
-              <span className="font-black text-[10px]">{item.drive_links?.length}</span>
+            {deadlineInfo && (
+              <span className={`px-2 py-1 rounded-lg text-[10px] font-black border shadow-2xs whitespace-nowrap shrink-0 ${deadlineInfo.className}`}>
+                {deadlineInfo.label}
+              </span>
             )}
-          </button>
+          </div>
 
-          {/* Edit Title Button - Full Manage Only */}
-          {canManage && (
+          {/* Column 3: Status Dropdown (Dynamic from Post Production Settings) */}
+          <div className="w-36 sm:w-44 shrink-0">
+            <ThreeDStatusSelect
+              currentStatus={currentStatus}
+              statuses={ppStatuses}
+              workspaceId={workspaceId || 'ws_default'}
+              disabled={!canEditStatusAndDate}
+              onChange={(val) => {
+                if (!canEditStatusAndDate) return;
+                if (onUpdateItemFields) {
+                  onUpdateItemFields(item.id, { status: val });
+                } else {
+                  onUpdateItem(item.id, 'status', val);
+                }
+                if (item.assigned_member_id) {
+                  const cat = detectDeliverableCategory(item.category, item.title);
+                  saveVendorAlbumOrder(workspaceId || 'ws_default', {
+                    partner_id: item.assigned_member_id,
+                    partner_name: item.assigned_to || '',
+                    client_name: clientName || 'Client Project',
+                    deliverable_id: item.id,
+                    category: cat,
+                    item_title: item.title,
+                    order_status: val,
+                  }).catch(() => {});
+                }
+              }}
+            />
+          </div>
+
+          {/* Column 4: Action Icons */}
+          <div className="flex items-center gap-1 shrink-0">
+            {/* Comments Button */}
             <button
               type="button"
-              onClick={() => setIsEditingTitle(true)}
-              title="Edit Title"
-              className="p-1.5 rounded-lg border border-[#EAE5DA] dark:border-stone-700 bg-white dark:bg-stone-800 text-slate-400 hover:text-amber-600 hover:border-amber-300 transition cursor-pointer"
+              onClick={() => onOpenComments(item.id, item.title)}
+              title="Activity notes & revisions"
+              className="px-2 py-1.5 rounded-lg border border-[#EAE5DA] dark:border-stone-700 bg-white dark:bg-stone-800 text-slate-600 dark:text-stone-300 hover:text-amber-700 hover:border-amber-400 transition cursor-pointer flex items-center gap-1 shadow-2xs text-[11px]"
             >
-              <Edit3 className="w-3.5 h-3.5" />
+              <MessageSquare className="w-3.5 h-3.5 text-amber-600" />
+              <span className="font-black">{commentCount}</span>
             </button>
-          )}
 
-          {/* Edit Commercials Fee Button - Full Manage Only */}
-          {canManage && (item.assigned_member_id || item.assigned_to) && (
+            {/* Drive & Review Links modal trigger */}
             <button
               type="button"
-              onClick={() => setIsAssignModalOpen(true)}
-              title="Edit Commercials & Payment"
-              className="p-1.5 rounded-lg border border-[#EAE5DA] dark:border-stone-700 bg-white dark:bg-stone-800 text-amber-700 dark:text-amber-400 hover:text-amber-800 hover:border-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30 transition cursor-pointer"
+              onClick={() => setIsAttachLinksModalOpen(true)}
+              title={
+                (item.drive_links && item.drive_links.length > 0)
+                  ? `${item.drive_links.length} attached link(s)`
+                  : item.drive_link
+                  ? 'Manage Links & Drive'
+                  : 'Attach Links (Drive, Review, Preview)'
+              }
+              className={`px-2 py-1.5 rounded-lg border transition cursor-pointer text-xs flex items-center gap-1 shadow-2xs ${
+                (item.drive_links && item.drive_links.length > 0) || item.drive_link
+                  ? 'bg-amber-100/70 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200' 
+                  : 'bg-white dark:bg-stone-800 border-[#EAE5DA] dark:border-stone-700 text-slate-400 hover:text-amber-700'
+              }`}
             >
-              <IndianRupee className="w-3.5 h-3.5" />
+              <Link2 className="w-3.5 h-3.5" />
+              {((item.drive_links?.length || 0) > 0) && (
+                <span className="font-black text-[10px]">{item.drive_links?.length}</span>
+              )}
             </button>
-          )}
 
-          {/* Delete Item with 3D confirmation dialog - Full Manage Only */}
-          {canManage && (
-            <button
-              type="button"
-              onClick={() => setShowDeleteConfirm(true)}
-              title="Delete item"
-              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition cursor-pointer"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
-          )}
+            {/* Edit Title Button - Full Manage Only */}
+            {canManage && (
+              <button
+                type="button"
+                onClick={() => setIsEditingTitle(true)}
+                title="Edit Title"
+                className="p-1.5 rounded-lg border border-[#EAE5DA] dark:border-stone-700 bg-white dark:bg-stone-800 text-slate-400 hover:text-amber-600 hover:border-amber-300 transition cursor-pointer"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+              </button>
+            )}
+
+            {/* Edit Commercials Fee Button - Full Manage Only */}
+            {canManage && (item.assigned_member_id || item.assigned_to) && (
+              <button
+                type="button"
+                onClick={() => setIsAssignModalOpen(true)}
+                title="Edit Commercials & Payment"
+                className="p-1.5 rounded-lg border border-[#EAE5DA] dark:border-stone-700 bg-white dark:bg-stone-800 text-amber-700 dark:text-amber-400 hover:text-amber-800 hover:border-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30 transition cursor-pointer"
+              >
+                <IndianRupee className="w-3.5 h-3.5" />
+              </button>
+            )}
+
+            {/* Delete Item with 3D confirmation dialog - Full Manage Only */}
+            {canManage && (
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(true)}
+                title="Delete item"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Deliverable Deletion 3D Confirmation Modal */}
       <PostProductionConfirmModal
@@ -651,6 +1086,79 @@ export default function DeliverableRowItem({
               });
             } catch (expErr) {
               console.warn('[DeliverableRowItem] Failed to sync payout to finance expense:', expErr);
+            }
+          }
+        }}
+      />
+
+      {/* Assign Printing Lab & Set Commercials Modal */}
+      <AssignCommercialsModal
+        isOpen={isAssignPrintingModalOpen}
+        onClose={() => setIsAssignPrintingModalOpen(false)}
+        deliverable={item}
+        clientName={clientName || 'Project Deliverables'}
+        targetRole="printer"
+        teamMembers={teamMembers}
+        onSaveAssignment={async (data) => {
+          const updatePayload: Partial<PostProductionDeliverable> = {
+            printer_id: data.memberId,
+            printer_name: data.memberName,
+            printing_agreed_amount: data.agreedAmount,
+            printing_paid_amount: data.paidAmount,
+            printing_balance_amount: data.balanceAmount,
+            printing_due_date: data.dueDate,
+            printing_deadline: data.dueDate,
+          };
+
+          if (onUpdateItemFields) {
+            onUpdateItemFields(item.id, updatePayload);
+          } else {
+            Object.entries(updatePayload).forEach(([k, v]) => onUpdateItem(item.id, k as any, v));
+          }
+
+          // Directly sync to partner_album_orders for immediate visibility in Team & Partners
+          try {
+            await saveVendorAlbumOrder(workspaceId || 'ws_default', {
+              partner_id: data.memberId,
+              partner_name: data.memberName,
+              partner_email: data.memberEmail || '',
+              client_name: clientName || 'Client Project',
+              project_id: item.project_id || '',
+              deliverable_id: item.id,
+              category: 'album_printing',
+              item_title: item.title,
+              album_type: item.title,
+              specs: item.specs || item.count || '',
+              total_amount: data.agreedAmount,
+              paid_amount: data.paidAmount,
+              balance_amount: data.balanceAmount,
+              due_date: data.dueDate,
+              order_status: item.printing_status || 'Pending',
+              payment_status: data.balanceAmount === 0 && data.agreedAmount > 0 ? 'PAID' : data.paidAmount > 0 ? 'PARTIAL' : 'PENDING',
+              notes: data.notes || '',
+            });
+          } catch (err) {
+            console.warn('[DeliverableRowItem] Failed to sync printing order:', err);
+          }
+
+          // Sync payout to Studio Owner's finance expenses if paid amount recorded
+          if (data.paidAmount > 0) {
+            try {
+              await syncTeamPaymentToFinanceExpense(workspaceId || '', {
+                title: `Album Printing: ${data.memberName} - ${item.title}`,
+                category: 'Album Printing & Binding',
+                amount: data.paidAmount,
+                date: new Date().toISOString().split('T')[0],
+                payment_mode: data.payMode || 'UPI',
+                reference_no: data.payRef || undefined,
+                notes: data.notes || `Album Printing payout for ${item.title} (${clientName || 'Project'})`,
+                team_member_name: data.memberName,
+                team_member_id: data.memberId,
+                client_name: clientName || '',
+                project_id: item.project_id || undefined,
+              });
+            } catch (expErr) {
+              console.warn('[DeliverableRowItem] Failed to sync printing payout to finance expense:', expErr);
             }
           }
         }}

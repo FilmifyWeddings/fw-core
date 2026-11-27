@@ -420,10 +420,10 @@ export default function ClientsPage() {
 
       // 3. Auto-Sync: For every lead with status 'booked' / 'Booked' that is NOT yet in workspace_clients, create a client record!
       let hasNewlySyncedClients = false;
-      const bookedLeads = leadList.filter(l => {
+      const bookedLeads = apiSuccess ? leadList.filter(l => {
         const stage = (l.status || (l as any).stage || '').toLowerCase();
         return stage === 'booked' || stage === 'closed' || stage === 'converted';
-      });
+      }) : [];
 
       const existingLeadIds = new Set(existingClientList.map(c => c.lead_id).filter(Boolean));
       const existingClientIds = new Set(existingClientList.map(c => c.id).filter(Boolean));
@@ -519,6 +519,19 @@ export default function ClientsPage() {
           };
 
           try {
+            // Double-check live DB before creating a new client card to prevent duplicate ghost rows
+            const { data: dbExisting, error: dbCheckErr } = await supabase
+              .from('workspace_clients')
+              .select('id')
+              .eq('lead_id', bookedLead.id)
+              .or(`user_id.eq.${wsIdToFetch},workspace_id.eq.${wsIdToFetch}`)
+              .limit(1);
+
+            if (dbCheckErr || (dbExisting && dbExisting.length > 0)) {
+              existingLeadIds.add(bookedLead.id);
+              continue;
+            }
+
             const { data: createdClient, error: insertErr } = await supabase
               .from('workspace_clients')
               .insert([newClientPayload])

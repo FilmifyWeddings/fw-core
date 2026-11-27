@@ -36,24 +36,31 @@ export interface DownloadPhotosAsZipOptions {
  * Strips timestamp and random hashes generated during upload (e.g. 1729864912345_ab12c_DSC0942.jpg -> DSC0942.jpg)
  */
 export function extractOriginalFileName(photo: PhotoDownloadItem, fallbackIndex: number = 0): string {
-  if (photo.original_name) return photo.original_name;
-  if (photo.file_name) return photo.file_name;
-  if (photo.name && !photo.name.includes('/')) return photo.name;
-  if (photo.title) return `${photo.title.replace(/[^a-zA-Z0-9_-]/g, '_')}.jpg`;
-
-  const targetKey = photo.original_key || photo.preview_key;
-  if (targetKey) {
-    const parts = targetKey.split('/');
-    const lastPart = parts[parts.length - 1];
-    // Regex matching {timestamp}_{randomSuffix}_{actualFileName}.ext
-    const match = lastPart.match(/^\d+_[a-z0-9]+_(.+)$/i);
-    if (match && match[1]) {
-      return match[1];
+  let fname = '';
+  if (photo.original_name) fname = photo.original_name;
+  else if (photo.file_name) fname = photo.file_name;
+  else if (photo.name && !photo.name.includes('/')) fname = photo.name;
+  else if (photo.title) fname = `${photo.title.replace(/[^a-zA-Z0-9_-]/g, '_')}.jpg`;
+  else {
+    const targetKey = photo.preview_key || photo.original_key;
+    if (targetKey) {
+      const parts = targetKey.split('/');
+      const lastPart = parts[parts.length - 1];
+      // Regex matching {timestamp}_{randomSuffix}_{actualFileName}.ext
+      const match = lastPart.match(/^\d+_[a-z0-9]+_(.+)$/i);
+      fname = match && match[1] ? match[1] : lastPart;
+    } else {
+      fname = `photo_${String(fallbackIndex + 1).padStart(3, '0')}.jpg`;
     }
-    return lastPart;
   }
 
-  return `photo_${String(fallbackIndex + 1).padStart(3, '0')}.jpg`;
+  if (fname.toLowerCase().endsWith('.webp')) {
+    fname = fname.replace(/\.webp$/i, '.jpg');
+  }
+  if (!fname.toLowerCase().endsWith('.jpg') && !fname.toLowerCase().endsWith('.jpeg')) {
+    fname = `${fname}.jpg`;
+  }
+  return fname;
 }
 
 /**
@@ -105,7 +112,7 @@ export async function downloadPhotosAsZip({
 
         const currentIndex = index++;
         const photo = photos[currentIndex];
-        const targetKey = photo.original_key || photo.preview_key || photo.preview_url;
+        const targetKey = photo.preview_key || photo.original_key || photo.preview_url;
 
         // Resolve category folder
         let categoryName = 'All Photos';
@@ -146,7 +153,7 @@ export async function downloadPhotosAsZip({
         });
 
         // 1. Fetch direct signed download URL for original full-quality photo
-        let downloadUrl = photo.preview_url;
+        let downloadUrl = `/api/gallery/image?key=${encodeURIComponent(targetKey)}&download=1&format=jpg&name=${encodeURIComponent(uniqueFileName)}`;
         try {
           const urlRes = await fetch(
             `/api/gallery/download-url?key=${encodeURIComponent(targetKey)}&name=${encodeURIComponent(uniqueFileName)}`,

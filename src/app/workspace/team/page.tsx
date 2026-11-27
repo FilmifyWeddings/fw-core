@@ -125,7 +125,7 @@ export default function WorkspaceTeamPage() {
   // Team & Partner Financial Engine Drawer States
   const [selectedFinanceMember, setSelectedFinanceMember] = useState<TeamMember | null>(null);
   const [isFinanceDrawerOpen, setIsFinanceDrawerOpen] = useState(false);
-  const [financeInitialTab, setFinanceInitialTab] = useState<'bookings' | 'payroll' | 'analytics'>('payroll');
+  const [financeInitialTab, setFinanceInitialTab] = useState<'bookings' | 'payroll' | 'analytics' | 'deliverables' | 'album_printing'>('payroll');
   const [memberFinancials, setMemberFinancials] = useState<Record<string, TeamFinancialSummary>>({});
   const [financePeriod, setFinancePeriod] = useState<'all' | 'this_month' | 'last_month' | 'this_year' | 'custom'>('all');
   const [customStartDate, setCustomStartDate] = useState('');
@@ -607,107 +607,60 @@ export default function WorkspaceTeamPage() {
     setIsAddModalOpen(false);
     setMemberToEdit(null);
 
-    // 2. Background async save
+    // 2. Authoritative async save via /api/workspace/members (bypasses RLS/session races)
     (async () => {
       try {
+        const { authFetch, authFetchJson } = await import('@/lib/client-auth-fetch');
         const { data: { session } } = await supabase.auth.getSession();
-        const currentUid = session?.user?.id;
-        if (!currentUid) return;
-
-        const effectiveWsId = workspaceId || currentUid;
-
-        // 1. Insert/Update in fw_team_members for scheduling calendar & attendance
-        const fwPayload = {
-          name: memberData.name,
-          primary_role: memberData.primary_role,
-          country_code: memberData.country_code || '+91',
-          phone_number: memberData.phone_number,
-          email: memberData.email || null,
-          avatar_url: memberData.avatar_url || null,
-          member_types: memberData.member_types || [memberData.primary_type || 'IN_HOUSE'],
-          primary_type: memberData.primary_type || 'IN_HOUSE',
-          roles: memberData.roles || [memberData.primary_role || 'IN_HOUSE'],
-          default_daily_rate: memberData.default_daily_rate || 0,
-          default_currency: memberData.default_currency || 'INR',
-          payout_frequency: memberData.payout_frequency || 'daily',
-          user_id: currentUid,
-        };
-
-        let savedMemberId = editingMemberId;
-
-        if (isEdit && editingMemberId) {
-          await supabase
-            .from('fw_team_members')
-            .update(fwPayload)
-            .eq('id', editingMemberId);
-        } else {
-          const { data: insertedData } = await supabase
-            .from('fw_team_members')
-            .insert([fwPayload])
-            .select('id')
-            .maybeSingle();
-          if (insertedData?.id) savedMemberId = insertedData.id;
+        const currentUid = session?.user?.id || (typeof window !== 'undefined' ? localStorage.getItem('sc_user_id') : null);
+        const storedWs = typeof window !== 'undefined' ? localStorage.getItem('sc_active_workspace_id') : null;
+        const effectiveWsId = workspaceId || storedWs || currentUid;
+        if (!effectiveWsId) {
+          throw new Error('Workspace session is missing. Please refresh and sign in again.');
         }
 
-        // Save isolated studio member rate
+        const canonicalId = (isEdit && editingMemberId)
+          ? editingMemberId
+          : (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : tempId);
+
+        const resJson = await authFetchJson('/api/workspace/members', {
+          method: 'POST',
+          body: JSON.stringify({
+            id: canonicalId,
+            member_id: canonicalId,
+            workspace_id: effectiveWsId,
+            name: memberData.name,
+            email: memberData.email || `${memberData.name.toLowerCase().replace(/\s+/g, '')}@partner.studiocore.in`,
+            phone: `${memberData.country_code || '+91'} ${memberData.phone_number}`.trim(),
+            primary_role: memberData.primary_role,
+            roles: memberData.roles || [memberData.primary_role],
+            member_types: memberData.member_types || ['IN_HOUSE'],
+            primary_type: memberData.primary_type || 'IN_HOUSE',
+            avatar_url: memberData.avatar_url || null,
+            default_daily_rate: Number(memberData.default_daily_rate) || 0,
+            default_currency: memberData.default_currency || 'INR',
+            payout_frequency: memberData.payout_frequency || 'daily',
+            permissions: memberData.permissions,
+          }),
+        });
+
+        const savedMemberId = resJson?.savedMember?.id || resJson?.member?.id || canonicalId;
+        if (!isEdit && savedMemberId !== tempId) {
+          setMembers(prev => prev.map(m => (m.id === tempId ? { ...m, id: savedMemberId } : m)));
+        }
+
         if (savedMemberId && memberData.default_daily_rate != null) {
           await saveWorkspaceMemberRate(effectiveWsId, savedMemberId, Number(memberData.default_daily_rate), memberData.default_currency || 'INR', memberData.payout_frequency || 'daily');
         }
 
-        // 2. Insert/Update in workspace_members API for Multi-Tenant RBAC
-        if (session?.access_token) {
-          const memberRes = await fetch('/api/workspace/members', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${session.access_token}`,
-            },
-            body: JSON.stringify({
-              id: memberToEdit?.id || savedMemberId,
-              member_id: memberToEdit?.id || savedMemberId,
-              workspace_id: effectiveWsId,
-              name: memberData.name,
-              email: memberData.email || `${memberData.name.toLowerCase().replace(/\s+/g, '')}@partner.studiocore.in`,
-              phone: `${memberData.country_code || '+91'} ${memberData.phone_number}`.trim(),
-              primary_role: memberData.primary_role,
-              roles: memberData.roles || [memberData.primary_role],
-              member_types: memberData.member_types || ['IN_HOUSE'],
-              primary_type: memberData.primary_type || 'IN_HOUSE',
-              avatar_url: memberData.avatar_url || null,
-              default_daily_rate: Number(memberData.default_daily_rate) || 0,
-              default_currency: memberData.default_currency || 'INR',
-              payout_frequency: memberData.payout_frequency || 'daily',
-              permissions: memberData.permissions,
-            }),
-          }).catch(() => null);
+        if (savedMemberId && memberData.permissions) {
+          await saveMemberStudioPermissions(effectiveWsId, savedMemberId, memberData.permissions).catch(() => {});
+        }
 
-          if (memberRes && memberRes.ok) {
-            try {
-              const resJson = await memberRes.json();
-              if (resJson?.savedMember?.id) {
-                savedMemberId = resJson.savedMember.id;
-              }
-            } catch (_) {}
-          }
-
-          // Save isolated studio member rate
-          if (savedMemberId && memberData.default_daily_rate != null) {
-            await saveWorkspaceMemberRate(effectiveWsId, savedMemberId, Number(memberData.default_daily_rate), memberData.default_currency || 'INR', memberData.payout_frequency || 'daily');
-          }
-
-          // Save isolated studio member permissions
-          if (savedMemberId && memberData.permissions) {
-            await saveMemberStudioPermissions(currentUid, savedMemberId, memberData.permissions).catch(() => {});
-          }
-
-          // 3. Log Audit Activity
-          await fetch('/api/workspace/activity-logs', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${session.access_token}`,
-            },
-            body: JSON.stringify({
+        // 3. Log Audit Activity
+        await authFetch('/api/workspace/activity-logs', {
+          method: 'POST',
+          body: JSON.stringify({
               workspace_id: effectiveWsId,
               module: 'TEAM',
               action: isEdit ? 'MEMBER_PERMISSIONS_UPDATED' : 'MEMBER_INVITED',
@@ -721,15 +674,13 @@ export default function WorkspaceTeamPage() {
               user_name: userName || 'Studio Admin',
               user_role: isOwner ? 'OWNER' : 'ADMIN',
             }),
-          }).catch(() => {});
-        }
-
-        // Replace optimistic tempId with real DB savedMemberId if newly inserted
-        if (!isEdit && savedMemberId) {
-          setMembers(prev => prev.map(m => m.id === tempId ? { ...m, id: savedMemberId! } : m));
-        }
+        }).catch(() => {});
       } catch (err: any) {
         console.error('[WorkspaceTeamPage] Background save failed:', err);
+        if (!isEdit) {
+          setMembers(prev => prev.filter(m => m.id !== tempId));
+        }
+        alert('Failed to save team member: ' + (err?.message || 'Please check your connection and try again.'));
       }
     })();
   };
@@ -798,7 +749,15 @@ export default function WorkspaceTeamPage() {
   // Direct Member Action Handlers (Instant 0ms Drawer)
   const handleOpenDetails = (member: TeamMember) => {
     setSelectedFinanceMember(member);
-    setFinanceInitialTab('bookings');
+    const isPartnerOrLab = (
+      member.primary_type === 'PARTNER' ||
+      member.primary_type === 'VENDOR' ||
+      member.member_types?.includes('PARTNER') ||
+      member.member_types?.includes('VENDOR') ||
+      member.type === 'partner' ||
+      /lab|print|vendor|partner|press|binder/i.test(member.primary_role || member.role || '')
+    );
+    setFinanceInitialTab(isPartnerOrLab ? 'album_printing' : 'bookings');
     setIsFinanceDrawerOpen(true);
   };
 

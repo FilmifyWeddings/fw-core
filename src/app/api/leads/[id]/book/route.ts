@@ -433,6 +433,8 @@ export async function POST(
                 user_id: workspaceId,
                 workspace_id: workspaceId,
                 client_id: workspaceClientId,
+                ...(resolvedPmId ? { project_manager_id: resolvedPmId } : {}),
+                ...(resolvedPmName ? { project_manager_name: resolvedPmName } : {}),
                 overall_status: 'active',
                 is_deleted: false,
                 deliverables: [],
@@ -459,39 +461,55 @@ export async function POST(
           let projId: string | null = null;
           const { data: existingProjs } = await supabaseAdmin
             .from('fw_projects')
-            .select('id')
+            .select('id, project_manager_id, project_manager_name')
             .eq('user_id', workspaceId)
             .eq('client_id', workspaceClientId);
 
+          const targetFpPmName = existingProjs?.[0]?.project_manager_name || resolvedPmName || null;
+          const targetFpPmId = existingProjs?.[0]?.project_manager_id || resolvedPmId || null;
+
           if (existingProjs && existingProjs.length > 0) {
             projId = existingProjs[0].id;
-            await supabaseAdmin
-              .from('fw_projects')
-              .update({
-                client_id: workspaceClientId,
-                client_name: finalClientName,
-                main_date: eventDate || nowIso.split('T')[0],
-                main_venue: (mainVenue && String(mainVenue).trim()) ? String(mainVenue).trim() : 'Studio Venue / TBD',
-                status: 'active',
-                is_archived: false,
-                updated_at: nowIso
-              })
-              .eq('id', projId);
+            const fpUpd: any = {
+              client_id: workspaceClientId,
+              client_name: finalClientName,
+              main_date: eventDate || nowIso.split('T')[0],
+              main_venue: (mainVenue && String(mainVenue).trim()) ? String(mainVenue).trim() : 'Studio Venue / TBD',
+              status: 'active',
+              is_archived: false,
+              updated_at: nowIso,
+              ...(!existingProjs[0].project_manager_name && targetFpPmName ? { project_manager_name: targetFpPmName } : {}),
+              ...(!existingProjs[0].project_manager_id && targetFpPmId ? { project_manager_id: targetFpPmId } : {}),
+            };
+            const { error: fpErr } = await supabaseAdmin.from('fw_projects').update(fpUpd).eq('id', projId);
+            if (fpErr && fpErr.code === '42804' && 'project_manager_id' in fpUpd) {
+              delete fpUpd.project_manager_id;
+              await supabaseAdmin.from('fw_projects').update(fpUpd).eq('id', projId);
+            }
           } else {
-            const { data: createdProj } = await supabaseAdmin
+            const fpIns: any = {
+              user_id: workspaceId,
+              client_id: workspaceClientId,
+              client_name: finalClientName,
+              main_date: eventDate || nowIso.split('T')[0],
+              main_venue: (mainVenue && String(mainVenue).trim()) ? String(mainVenue).trim() : 'Studio Venue / TBD',
+              status: 'active',
+              is_archived: false,
+              ...(targetFpPmName ? { project_manager_name: targetFpPmName } : {}),
+              ...(targetFpPmId ? { project_manager_id: targetFpPmId } : {}),
+            };
+            const { data: createdProj, error: fpInsErr } = await supabaseAdmin
               .from('fw_projects')
-              .insert({
-                user_id: workspaceId,
-                client_id: workspaceClientId,
-                client_name: finalClientName,
-                main_date: eventDate || nowIso.split('T')[0],
-                main_venue: (mainVenue && String(mainVenue).trim()) ? String(mainVenue).trim() : 'Studio Venue / TBD',
-                status: 'active',
-                is_archived: false
-              })
+              .insert(fpIns)
               .select('id')
-              .single();
-            projId = createdProj?.id || null;
+              .maybeSingle();
+            if (fpInsErr && fpInsErr.code === '42804' && 'project_manager_id' in fpIns) {
+              delete fpIns.project_manager_id;
+              const { data: fbProj } = await supabaseAdmin.from('fw_projects').insert(fpIns).select('id').maybeSingle();
+              projId = fbProj?.id || null;
+            } else {
+              projId = createdProj?.id || null;
+            }
           }
 
           // For Empty Cards (No Final Quotation), strictly DO NOT insert arbitrary sub-events!

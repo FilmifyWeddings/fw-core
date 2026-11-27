@@ -206,9 +206,45 @@ function LoginContent() {
         if (searchParams.get('error') || searchParams.get('logout') === 'true') return;
         const { data: { session } } = await supabase.auth.getSession();
         if (!isCancelled && session?.user) {
+          // 🛡️ MOBILE REDIRECT LOOP CIRCUIT-BREAKER:
+          // Detect rapid bounces (>2 in 7 seconds). Halts Chrome "temporarily down" ERR_TOO_MANY_REDIRECTS crashes!
+          const loopKey = 'sc_login_redirect_attempts';
+          const lastTimeKey = 'sc_login_last_redirect_time';
+          const now = Date.now();
+          const lastTime = parseInt(sessionStorage.getItem(lastTimeKey) || '0', 10);
+          const attempts = (now - lastTime < 7000) ? parseInt(sessionStorage.getItem(loopKey) || '0', 10) + 1 : 1;
+          sessionStorage.setItem(lastTimeKey, now.toString());
+          sessionStorage.setItem(loopKey, attempts.toString());
+
+          if (attempts > 3) {
+            console.warn('[Login Circuit Breaker] Rapid redirect loop detected (>3 attempts in 7s). Pausing redirect.');
+            sessionStorage.removeItem(loopKey);
+            return;
+          }
+
+          // Save sc_user_id and sc_user_email right away so workspace has them immediately
+          if (session?.user?.id && typeof window !== 'undefined') {
+            try {
+              localStorage.setItem('sc_user_id', session.user.id);
+              if (session.user.email) localStorage.setItem('sc_user_email', session.user.email);
+            } catch (_) {}
+          }
+
+          // 🛡️ Sync session tokens explicitly to document.cookie before redirecting
+          if (session.access_token) {
+            try {
+              const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
+              const secureFlag = isHttps ? '; Secure' : '';
+              document.cookie = `sb-access-token=${session.access_token}; path=/; max-age=31536000; SameSite=Lax${secureFlag}`;
+              if (session.refresh_token) {
+                document.cookie = `sb-refresh-token=${session.refresh_token}; path=/; max-age=31536000; SameSite=Lax${secureFlag}`;
+              }
+            } catch (_) {}
+          }
+
           const defaultPath = portal === 'team' ? '/team/dashboard' : '/workspace';
           const destination = getSanitizedRedirectUrl(searchParams.get('redirectTo'), defaultPath);
-          window.location.href = destination;
+          router.replace(destination);
         }
       } catch (_) {}
     }
@@ -222,7 +258,7 @@ function LoginContent() {
       if (!isCancelled && session?.user && searchParams.get('logout') !== 'true' && !searchParams.get('error')) {
         const defaultPath = portal === 'team' ? '/team/dashboard' : '/workspace';
         const destination = getSanitizedRedirectUrl(searchParams.get('redirectTo'), defaultPath);
-        window.location.href = destination;
+        router.replace(destination);
       }
     });
 
@@ -374,9 +410,16 @@ function LoginContent() {
       }
 
       if (result.user || result.session) {
+        const authedUser = result.user || result.session?.user;
+        if (authedUser?.id && typeof window !== 'undefined') {
+          try {
+            localStorage.setItem('sc_user_id', authedUser.id);
+            if (authedUser.email) localStorage.setItem('sc_user_email', authedUser.email);
+          } catch (_) {}
+        }
         const defaultPath = portal === 'team' ? '/team/dashboard' : '/workspace';
         const destination = getSanitizedRedirectUrl(searchParams.get('redirectTo'), defaultPath);
-        window.location.href = destination;
+        router.replace(destination);
       } else {
         throw new Error('Login failed. Please check your credentials and try again.');
       }
@@ -537,12 +580,21 @@ function LoginContent() {
         } catch (_) {}
       }
       const destination = getSanitizedRedirectUrl(searchParams.get('redirectTo'), '/workspace?google_onboarding=true&role=owner');
-      window.location.href = destination;
+      router.replace(destination);
       return;
+    }
+    if (typeof window !== 'undefined') {
+      try {
+        const { data: { session: otpSession } } = await supabase.auth.getSession();
+        if (otpSession?.user?.id) {
+          localStorage.setItem('sc_user_id', otpSession.user.id);
+          if (otpSession.user.email) localStorage.setItem('sc_user_email', otpSession.user.email);
+        }
+      } catch (_) {}
     }
     const defaultPath = (portal === 'team' || otpPendingMeta?.isTeamPortal) ? '/team/dashboard' : '/workspace';
     const destination = getSanitizedRedirectUrl(searchParams.get('redirectTo'), defaultPath);
-    window.location.href = destination;
+    router.replace(destination);
   };
 
   const filteredCountries = COUNTRIES.filter(

@@ -4,6 +4,15 @@ import { verifyMetaAuth } from '@/lib/meta-auth';
 
 export const dynamic = 'force-dynamic';
 
+interface LeadsCacheEntry {
+  leads: any[];
+  totalCount: number;
+  hasMore: boolean;
+  timestamp: number;
+}
+const leadsMemoryCache = new Map<string, LeadsCacheEntry>();
+const LEADS_CACHE_TTL_MS = 4000;
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
@@ -11,6 +20,7 @@ export async function GET(req: NextRequest) {
     const page = parseInt(searchParams.get('page') || '0', 10);
     const pageSize = parseInt(searchParams.get('pageSize') || '250', 10);
     const search = (searchParams.get('search') || '').trim();
+    const bypassCache = searchParams.get('_nocache') === 'true';
 
     // Verify Session
     const authResult = await verifyMetaAuth(req, requestedWorkspaceId);
@@ -21,6 +31,32 @@ export async function GET(req: NextRequest) {
     }
 
     const currentUserId = authResult.userId;
+
+    // Check RAM micro-cache for high-concurrency page 0 requests
+    const cacheKey = `leads_${workspaceId}_${currentUserId}_p${page}_s${search}`;
+    const now = Date.now();
+    if (!bypassCache && !search && page === 0) {
+      const cached = leadsMemoryCache.get(cacheKey);
+      if (cached && (now - cached.timestamp < LEADS_CACHE_TTL_MS)) {
+        return NextResponse.json(
+          {
+            success: true,
+            leads: cached.leads,
+            totalCount: cached.totalCount,
+            page: 0,
+            pageSize,
+            hasMore: cached.hasMore,
+            cached: true,
+          },
+          {
+            headers: {
+              'Cache-Control': 'private, max-age=4, stale-while-revalidate=10',
+              'X-Cache': 'HIT',
+            },
+          }
+        );
+      }
+    }
 
     // 🔒 RBAC Permission Check for Workspace Members (Non-owners)
     let isOwner = (currentUserId === workspaceId);
@@ -158,13 +194,38 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    return NextResponse.json({
-      success: true,
-      leads: sanitizedLeads,
-      count: sanitizedLeads.length,
-      totalCount: totalCount,
-      hasMore: from + sanitizedLeads.length < totalCount,
-    });
+    const hasMoreBool = from + sanitizedLeads.length < totalCount;
+
+    // Cache page 0 clean queries in RAM
+    if (!search && page === 0) {
+      leadsMemoryCache.set(cacheKey, {
+        leads: sanitizedLeads,
+        totalCount,
+        hasMore: hasMoreBool,
+        timestamp: now,
+      });
+      if (leadsMemoryCache.size > 100) {
+        for (const [k, v] of leadsMemoryCache.entries()) {
+          if (now - v.timestamp > 30000) leadsMemoryCache.delete(k);
+        }
+      }
+    }
+
+    return NextResponse.json(
+      {
+        success: true,
+        leads: sanitizedLeads,
+        count: sanitizedLeads.length,
+        totalCount: totalCount,
+        hasMore: hasMoreBool,
+      },
+      {
+        headers: {
+          'Cache-Control': 'private, max-age=4, stale-while-revalidate=10',
+          'X-Cache': 'MISS',
+        },
+      }
+    );
   } catch (error: any) {
     console.error('[API /leads Server Error]:', error);
     return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 });

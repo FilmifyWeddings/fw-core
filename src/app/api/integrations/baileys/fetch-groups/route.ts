@@ -1,91 +1,106 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
 import { supabaseAdmin } from '@/lib/supabase';
 
-/**
- * POST /api/integrations/baileys/fetch-groups
- * Proxies the request to the standalone baileys-worker /fetch-groups endpoint.
- * The worker must be running on the same VPS as this Next.js instance.
- *
- * This replaces the legacy pattern of the browser calling localhost:3002 directly,
- * which fails in production because the frontend is on Vercel (different origin).
- */
+export const dynamic = 'force-dynamic';
+
+export async function GET(req: NextRequest) {
+  return handleFetchGroups(req);
+}
+
 export async function POST(req: NextRequest) {
+  return handleFetchGroups(req);
+}
+
+async function handleFetchGroups(req: NextRequest) {
   try {
-    const authHeader = req.headers.get('authorization');
-    const token = authHeader?.replace('Bearer ', '');
-
-    const supabaseClient = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    );
-
-    let workspaceId = '';
-    if (token) {
-      const { data: { user } } = await supabaseClient.auth.getUser(token);
-      if (user) workspaceId = user.id;
-    }
-
-    // Fallback workspace resolution from body or query params
     const searchParams = req.nextUrl.searchParams;
-    const qsWs = searchParams.get('workspace_id') || searchParams.get('tenant_id');
-    if (qsWs) workspaceId = qsWs;
+    let workspaceId = searchParams.get('workspace_id') || searchParams.get('tenant_id') || '';
 
-    try {
-      const body = await req.json().catch(() => ({}));
-      if (body?.workspace_id) workspaceId = body.workspace_id;
-      if (body?.tenant_id) workspaceId = body.tenant_id;
-    } catch {}
+    if (req.method === 'POST') {
+      try {
+        const body = await req.json().catch(() => ({}));
+        if (body?.workspace_id) workspaceId = body.workspace_id;
+        if (body?.tenant_id) workspaceId = body.tenant_id;
+      } catch {}
+    }
 
     const WORKER_PORT = process.env.WORKER_PORT ?? '3002';
+    let workerGroups: any[] = [];
 
-    const res = await fetch(`http://127.0.0.1:${WORKER_PORT}/fetch-groups`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ workspace_id: workspaceId }),
-      signal: AbortSignal.timeout(15_000),
-    });
+    // 1. Fetch live groups directly from Baileys socket worker
+    try {
+      const res = await fetch(`http://127.0.0.1:${WORKER_PORT}/fetch-groups`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspace_id: workspaceId }),
+        signal: AbortSignal.timeout(8_000),
+      });
 
-    const data = await res.json();
-
-    if (!res.ok || !data.success) {
-      // Fallback: Check cached groups in DB
-      const { data: dbGroups } = await supabaseAdmin
-        .from('baileys_chats')
-        .select('jid, display_name, participant_count, is_group')
-        .eq('is_group', true)
-        .order('display_name', { ascending: true });
-
-      if (dbGroups && dbGroups.length > 0) {
-        return NextResponse.json({ success: true, groups: dbGroups, cached: true });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.groups)) {
+          workerGroups = data.groups;
+        }
       }
-
-      return NextResponse.json(
-        { success: false, error: data.error || `Worker returned HTTP ${res.status}` },
-        { status: res.status }
-      );
+    } catch (sockErr: any) {
+      console.warn('[baileys/fetch-groups] Live worker call warning:', sockErr?.message);
     }
 
-    return NextResponse.json(data);
-  } catch (err: any) {
-    console.error('[baileys/fetch-groups] Error:', err);
+    // 2. Query groups from PostgreSQL using supabaseAdmin (bypasses RLS)
+    let dbGroupsQuery = supabaseAdmin
+      .from('baileys_chats')
+      .select('jid, display_name, metadata, is_group, workspace_id')
+      .eq('is_group', true)
+      .limit(5000);
 
-    // Fallback: Check cached groups in DB
-    try {
-      const { data: dbGroups } = await supabaseAdmin
-        .from('baileys_chats')
-        .select('jid, display_name, participant_count, is_group')
-        .eq('is_group', true)
-        .order('display_name', { ascending: true });
+    if (workspaceId && workspaceId !== '00000000-0000-0000-0000-000000000000') {
+      dbGroupsQuery = dbGroupsQuery.or(`workspace_id.eq.${workspaceId},workspace_id.is.null`);
+    }
 
-      if (dbGroups && dbGroups.length > 0) {
-        return NextResponse.json({ success: true, groups: dbGroups, cached: true });
+    const { data: dbGroups, error: dbErr } = await dbGroupsQuery.order('display_name', { ascending: true });
+    if (dbErr) {
+      console.warn('[baileys/fetch-groups] DB fetch warning:', dbErr.message);
+    }
+
+    // 3. Merge groups without duplicates (keyed by jid)
+    const groupsMap = new Map<string, any>();
+
+    for (const g of (dbGroups || [])) {
+      if (g.jid && (g.jid.endsWith('@g.us') || g.is_group)) {
+        groupsMap.set(g.jid, {
+          jid: g.jid,
+          display_name: g.display_name || g.jid.split('@')[0],
+          participant_count: g.metadata?.participant_count ?? 0,
+          is_group: true,
+        });
       }
-    } catch (_) {}
+    }
 
+    for (const g of workerGroups) {
+      if (g.jid && (g.jid.endsWith('@g.us') || g.is_group)) {
+        groupsMap.set(g.jid, {
+          jid: g.jid,
+          display_name: g.display_name || g.jid.split('@')[0],
+          participant_count: g.participant_count ?? (groupsMap.get(g.jid)?.participant_count ?? 0),
+          is_group: true,
+        });
+      }
+    }
+
+    const combinedGroups = Array.from(groupsMap.values()).sort((a, b) =>
+      (a.display_name || '').localeCompare(b.display_name || '')
+    );
+
+    return NextResponse.json({
+      success: true,
+      groups: combinedGroups,
+      count: combinedGroups.length,
+    });
+  } catch (err: any) {
+    console.error('[baileys/fetch-groups] Route error:', err);
     return NextResponse.json(
-      { success: false, error: err.message || 'Could not reach Baileys worker' },
-      { status: 502 }
+      { success: false, error: err.message || 'Error fetching WhatsApp groups' },
+      { status: 500 }
     );
   }
 }

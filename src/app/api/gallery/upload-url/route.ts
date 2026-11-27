@@ -5,6 +5,7 @@ import {
   getGalleryPresignedUploadUrl,
   B2_GALLERY_BUCKET_NAME,
   ensureGalleryCors,
+  buildGalleryPhotoKeys,
 } from '@/lib/storage/galleryB2Client';
 
 export const dynamic = 'force-dynamic';
@@ -58,39 +59,46 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 3. Generate Backblaze B2 Presigned Upload URLs in parallel
+    // 3. Generate Backblaze B2 Presigned Upload URLs in parallel (Web-Sharp Only)
     const timestamp = Date.now();
     const isBatch = Array.isArray(body.files);
-    const includeOriginals = body.includeOriginals === true;
+    const requestedFolderId = body.folderId || body.folder_id || body.collectionId || body.collection_id || 'default';
 
     const results = await Promise.all(
       rawFiles.map(async (fileItem, index) => {
         const fname = fileItem.filename || fileItem.fileName || fileItem.file_name || `photo_${index}`;
-        const ftype = fileItem.originalType || fileItem.content_type || 'image/jpeg';
         const randomSuffix = Math.random().toString(36).substring(2, 7);
         const baseName = fname.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_-]/g, '_');
+        const photoId = `${timestamp}_${randomSuffix}_${baseName}`;
+        const targetFolderId = (fileItem as any).folder_id || (fileItem as any).folderId || (fileItem as any).collection_id || (fileItem as any).collectionId || requestedFolderId || 'default';
 
-        // 1. Preview: 2048px JPEG (~300-350 KB) for instant millisecond lightbox popup swiping
-        const previewKey = `galleries/${targetWorkspaceId}/${galleryId}/previews/${timestamp}_${randomSuffix}_${baseName}.jpg`;
-        // 2. Thumbnail: 480px WebP (~15 KB) for high-speed gallery grid scrolling
-        const thumbKey = `galleries/${targetWorkspaceId}/${galleryId}/thumbs/${timestamp}_${randomSuffix}_${baseName}.webp`;
-        // 3. Original: If includeOriginals, raw camera master. If !includeOriginals, ~1 MB 4K Ultra Sharp JPEG!
-        const originalKey = `galleries/${targetWorkspaceId}/${galleryId}/original/${timestamp}_${randomSuffix}_${baseName}.jpg`;
+        // Standardized B2 object keys:
+        // workspaces/{workspace_id}/events/{event_id}/folders/{folder_id}/thumb/{photo_id}.webp
+        // workspaces/{workspace_id}/events/{event_id}/folders/{folder_id}/preview/{photo_id}.webp
+        const { thumbKey, previewKey } = buildGalleryPhotoKeys({
+          workspaceId: targetWorkspaceId,
+          eventId: galleryId,
+          folderId: targetFolderId,
+          photoId,
+        });
 
-        const [previewUploadUrl, thumbUploadUrl, originalUploadUrl] = await Promise.all([
-          getGalleryPresignedUploadUrl(previewKey, 'image/jpeg', 3600, B2_GALLERY_BUCKET_NAME),
+        // Web-Sharp Only: Generate presigned upload URLs strictly for thumb & sharp preview WebP
+        const [previewUploadUrl, thumbUploadUrl] = await Promise.all([
+          getGalleryPresignedUploadUrl(previewKey, 'image/webp', 3600, B2_GALLERY_BUCKET_NAME),
           getGalleryPresignedUploadUrl(thumbKey, 'image/webp', 3600, B2_GALLERY_BUCKET_NAME),
-          getGalleryPresignedUploadUrl(originalKey, includeOriginals ? ftype : 'image/jpeg', 3600, B2_GALLERY_BUCKET_NAME),
         ]);
 
         return {
           filename: fname,
-          originalKey,
-          previewKey,
+          photoId,
+          folderId: targetFolderId,
           thumbKey,
-          originalUploadUrl,
-          previewUploadUrl,
+          previewKey,
           thumbUploadUrl,
+          previewUploadUrl,
+          // Backward compatibility fields: originalKey points to sharp preview WebP
+          originalKey: previewKey,
+          originalUploadUrl: null,
         };
       })
     );
@@ -110,12 +118,13 @@ export async function POST(req: NextRequest) {
     const single = results[0];
     return NextResponse.json({
       success: true,
-      originalKey: single.originalKey,
-      previewKey: single.previewKey,
       thumbKey: single.thumbKey,
-      originalUploadUrl: single.originalUploadUrl,
-      previewUploadUrl: single.previewUploadUrl,
+      previewKey: single.previewKey,
       thumbUploadUrl: single.thumbUploadUrl,
+      previewUploadUrl: single.previewUploadUrl,
+      folderId: single.folderId,
+      originalKey: single.previewKey,
+      originalUploadUrl: null,
     });
   } catch (err: any) {
     console.error('Error generating presigned upload URLs:', err);

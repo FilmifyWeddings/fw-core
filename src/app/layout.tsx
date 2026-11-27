@@ -5,6 +5,7 @@ import { Suspense } from "react";
 import { VersionGuard } from "@/components/VersionGuard";
 import { AuthRedirectGuard } from "@/components/AuthRedirectGuard";
 import { WorkspaceProvider } from "@/lib/context/BhamstraContext";
+import { QueryProvider } from "@/providers/QueryProvider";
 import { WorkspaceDataProvider } from "@/context/WorkspaceDataContext";
 import { RouteProgressBar } from "@/components/ui/RouteProgressBar";
 
@@ -128,9 +129,11 @@ export default function RootLayout({
                       var assetSrc = (target && (target.src || target.href)) || '';
                       if (isAsset && assetSrc.indexOf('/_next/static/') !== -1) {
                         var lastReload = safeGet('sc_chunk_reload');
+                        var reloadCount = parseInt(safeGet('sc_chunk_reload_count') || '0', 10);
                         var now = Date.now();
-                        if (!lastReload || (now - parseInt(lastReload, 10)) > 8000) {
+                        if (reloadCount < 2 && (!lastReload || (now - parseInt(lastReload, 10)) > 8000)) {
                           safeSet('sc_chunk_reload', now.toString());
+                          safeSet('sc_chunk_reload_count', (reloadCount + 1).toString());
                           window.location.reload();
                         }
                       }
@@ -154,9 +157,11 @@ export default function RootLayout({
                       var msg = (e.reason && (e.reason.message || e.reason.name || '')) || '';
                       if (msg.indexOf('ChunkLoadError') !== -1 || msg.indexOf('Loading chunk') !== -1 || msg.indexOf('Failed to fetch dynamically imported module') !== -1) {
                         var lastReload = safeGet('sc_chunk_reload');
+                        var reloadCount = parseInt(safeGet('sc_chunk_reload_count') || '0', 10);
                         var now = Date.now();
-                        if (!lastReload || (now - parseInt(lastReload, 10)) > 8000) {
+                        if (reloadCount < 2 && (!lastReload || (now - parseInt(lastReload, 10)) > 8000)) {
                           safeSet('sc_chunk_reload', now.toString());
+                          safeSet('sc_chunk_reload_count', (reloadCount + 1).toString());
                           window.location.reload();
                         }
                       }
@@ -195,25 +200,10 @@ export default function RootLayout({
                     return origConsoleWarn.apply(console, args);
                   };
 
-                  // 3. Proactive cookie header size management: prune redundant legacy tokens & orphaned chunks
+                  // 3. Clean legacy v1 auth token if present
                   try {
-                    if (typeof document !== 'undefined' && document.cookie && document.cookie.length > 2500) {
-                      var rawCookies = document.cookie.split(';');
-                      var obsNames = ['sb-access-token', 'sb-refresh-token', 'supabase.auth.token'];
-                      for (var ci = 0; ci < rawCookies.length; ci++) {
-                        var cTrim = rawCookies[ci].trim();
-                        var eq = cTrim.indexOf('=');
-                        if (eq !== -1) {
-                          var cName = cTrim.substring(0, eq).trim();
-                          if (obsNames.indexOf(cName) !== -1) {
-                            document.cookie = cName + '=; path=/; max-age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
-                          }
-                          var m = cName.match(/^(sb-[a-z0-9_-]+-auth-token)\.(\d+)$/i);
-                          if (m && parseInt(m[2], 10) >= 3) {
-                            document.cookie = cName + '=; path=/; max-age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
-                          }
-                        }
-                      }
+                    if (typeof document !== 'undefined' && document.cookie && document.cookie.indexOf('supabase.auth.token') !== -1) {
+                      document.cookie = 'supabase.auth.token=; path=/; max-age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
                     }
                   } catch (_) {}
                 } catch(e){}
@@ -227,6 +217,7 @@ export default function RootLayout({
           <RouteProgressBar />
         </Suspense>
         <AuthRedirectGuard />
+        <QueryProvider>
         <WorkspaceProvider>
           <WorkspaceDataProvider>
             <Suspense fallback={<div className="min-h-screen w-full bg-zinc-50 dark:bg-[#070708]" />}>
@@ -240,6 +231,7 @@ export default function RootLayout({
             </Suspense>
           </WorkspaceDataProvider>
         </WorkspaceProvider>
+        </QueryProvider>
       </body>
     </html>
   );

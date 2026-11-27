@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
-import { deleteGalleryObjects } from '@/lib/storage/galleryB2Client';
+import { deleteGalleryObjects, deleteGalleryPrefix } from '@/lib/storage/galleryB2Client';
+import { decrementWorkspaceStorage } from '@/lib/storage/galleryStorageQuota';
 
 export const dynamic = 'force-dynamic';
 
@@ -136,46 +137,107 @@ export async function PATCH(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const id = searchParams.get('id');
+    const id = searchParams.get('id') || searchParams.get('folder_id');
 
     if (!id) {
-      return NextResponse.json({ success: false, error: 'Collection ID is required' }, { status: 400 });
+      return NextResponse.json({ success: false, error: 'Collection or Folder ID is required' }, { status: 400 });
     }
 
-    // 1. Fetch all photos belonging to this collection to retrieve Backblaze B2 storage keys
-    const { data: photosInCol } = await supabaseAdmin
-      .from('gallery_photos')
-      .select('id, original_key, preview_key, thumbnail_key')
-      .eq('collection_id', id);
+    // 1. Fetch collection/folder details to identify gallery and workspace
+    const { data: collection } = await supabaseAdmin
+      .from('gallery_collections')
+      .select('id, gallery_id, name')
+      .eq('id', id)
+      .maybeSingle();
 
-    const photoIds = (photosInCol || []).map((p) => p.id);
-    const storageKeys = (photosInCol || []).flatMap((p) => [
+    const eventId = collection?.gallery_id;
+    let workspaceId: string | null = null;
+    if (eventId) {
+      const { data: gallery } = await supabaseAdmin
+        .from('event_galleries')
+        .select('workspace_id')
+        .eq('id', eventId)
+        .maybeSingle();
+      workspaceId = gallery?.workspace_id || null;
+    }
+
+    // 2. Fetch all photos belonging to this folder/collection with pagination to retrieve keys and calculate freed bytes
+    const photosInCol: any[] = [];
+    let colFrom = 0;
+    const COL_PAGE = 1000;
+    while (true) {
+      const { data: pagePhotos, error: pageErr } = await supabaseAdmin
+        .from('gallery_photos')
+        .select('id, original_key, preview_key, thumbnail_key, thumb_key, size_bytes')
+        .or(`collection_id.eq.${id},folder_id.eq.${id}`)
+        .range(colFrom, colFrom + COL_PAGE - 1);
+
+      if (pageErr) {
+        console.error('[GalleryCollections] Error fetching photos in collection:', pageErr);
+        break;
+      }
+      if (!pagePhotos || pagePhotos.length === 0) break;
+      photosInCol.push(...pagePhotos);
+      if (pagePhotos.length < COL_PAGE) break;
+      colFrom += COL_PAGE;
+    }
+
+    const photoIds = photosInCol.map((p) => p.id);
+    const storageKeys = photosInCol.flatMap((p: any) => [
       p.original_key,
       p.preview_key,
       p.thumbnail_key,
+      p.thumb_key,
     ]).filter((k): k is string => typeof k === 'string' && k.length > 0);
 
-    // 2. Permanently purge photos from Backblaze B2 to stop storage billing
+    const freedBytes = photosInCol.reduce(
+      (sum, p: any) => sum + (Number(p.size_bytes) || 0),
+      0
+    );
+
+    // 3. Permanently purge explicit photo keys from Backblaze B2
     if (storageKeys.length > 0) {
       const purgeResult = await deleteGalleryObjects(storageKeys);
-      console.log(`[GalleryCollections] Purged ${purgeResult.deleted} files from Backblaze B2 for collection ${id}.`);
+      console.log(`[GalleryCollections] Purged ${purgeResult.deleted} files from Backblaze B2 for folder ${id}.`);
     }
 
-    // 3. Remove face vectors from Supabase
-    if (photoIds.length > 0) {
+    // 4. Batch-delete entire folder prefix in Backblaze B2 to ensure zero orphan files
+    const prefixesToPurge: string[] = [];
+    if (workspaceId && eventId) {
+      prefixesToPurge.push(`gallery/${workspaceId}/${eventId}/${id}/`);
+      prefixesToPurge.push(`gallery/${workspaceId}/${eventId}/folders/${id}/`);
+      prefixesToPurge.push(`workspaces/${workspaceId}/events/${eventId}/folders/${id}/`);
+    }
+    if (eventId) {
+      prefixesToPurge.push(`gallery/default/${eventId}/${id}/`);
+      prefixesToPurge.push(`events/${eventId}/folders/${id}/`);
+      prefixesToPurge.push(`galleries/${workspaceId || 'default'}/${eventId}/folders/${id}/`);
+    }
+
+    for (const prefix of prefixesToPurge) {
       try {
-        await supabaseAdmin.from('photo_faces').delete().in('photo_id', photoIds);
+        await deleteGalleryPrefix(prefix);
+      } catch (prefixErr) {
+        console.warn(`[GalleryCollections] Note purging prefix ${prefix}:`, prefixErr);
+      }
+    }
+
+    // 5. Remove face vectors and photo records from Supabase in batches of 500
+    const CHUNK = 500;
+    for (let i = 0; i < photoIds.length; i += CHUNK) {
+      const slice = photoIds.slice(i, i + CHUNK);
+      try {
+        await supabaseAdmin.from('photo_faces').delete().in('photo_id', slice);
       } catch (_) {}
 
-      // 4. Delete photo records from Supabase
       try {
-        await supabaseAdmin.from('gallery_photos').delete().in('id', photoIds);
+        await supabaseAdmin.from('gallery_photos').delete().in('id', slice);
       } catch (err) {
         console.warn('[GalleryCollections] Note on deleting photos:', err);
       }
     }
 
-    // 5. Delete the collection record from Supabase
+    // 7. Delete the collection/folder record from Supabase
     const { error } = await supabaseAdmin
       .from('gallery_collections')
       .delete()
@@ -183,14 +245,22 @@ export async function DELETE(req: NextRequest) {
 
     if (error) throw error;
 
+    // 8. Decrement workspace storage quota
+    if (freedBytes > 0 && workspaceId) {
+      decrementWorkspaceStorage(workspaceId, eventId || null, freedBytes).catch((qErr) =>
+        console.warn('[GalleryCollections] Storage quota decrement notice:', qErr)
+      );
+    }
+
     return NextResponse.json({
       success: true,
       deletedId: id,
       deletedPhotosCount: photoIds.length,
       purgedStorageKeys: storageKeys.length,
+      freedBytes,
     });
   } catch (err: any) {
-    console.error('Error deleting gallery collection:', err);
+    console.error('Error deleting gallery collection/folder:', err);
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }
