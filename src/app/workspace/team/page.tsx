@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
+import { useWorkspaceData } from '@/context/WorkspaceDataContext';
 import AddTeamMemberModal from '@/app/team-manager/components/AddTeamMemberModal';
 import TeamMemberCard from './components/TeamMemberCard';
 import TeamTableRow from './components/TeamTableRow';
@@ -90,6 +91,7 @@ let memCachedHasPin = false;
 export default function WorkspaceTeamPage() {
   const router = useRouter();
   const { workspaceId, workspaceName, isOwner, userEmail, userName } = useWorkspace();
+  const { workspaceMembers: ctxMembers } = useWorkspaceData();
   const [mounted, setMounted] = useState(false);
   const [activeTab, setActiveTab] = useState<'directory' | 'activity_logs'>('directory');
   const [members, setMembers] = useState<TeamMember[]>(() => {
@@ -322,6 +324,14 @@ export default function WorkspaceTeamPage() {
   useEffect(() => {
     loadMembers();
   }, [loadMembers]);
+
+  // Safety net: if members is still empty while WorkspaceDataContext already loaded members, hydrate immediately
+  useEffect(() => {
+    if (members.length === 0 && Array.isArray(ctxMembers) && ctxMembers.length > 0) {
+      setMembers(ctxMembers as any);
+      setLoading(false);
+    }
+  }, [members.length, ctxMembers]);
 
   useEffect(() => {
     const handleFinanceUpdated = (e?: any) => {
