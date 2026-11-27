@@ -202,7 +202,7 @@ export default function WorkspaceTeamPage() {
   const fetchPendingReminders = useCallback(async () => {
     try {
       const url = workspaceId ? `/api/team/reminders?workspaceId=${workspaceId}` : '/api/team/reminders';
-      const res = await fetch(url);
+      const res = await authFetch(url);
       const data = await res.json();
       if (data.success && Array.isArray(data.reminders)) {
         setPendingRemindersCount(data.reminders.length);
@@ -225,19 +225,30 @@ export default function WorkspaceTeamPage() {
     if (memCachedTeamMembers.length === 0) setLoading(true);
     let resolvedWs = false;
     try {
-      let { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user?.id) {
-        const { data: refreshed } = await supabase.auth.refreshSession();
-        session = refreshed.session;
+      let effectiveWsId = workspaceId;
+      if (!effectiveWsId) {
+        let { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user?.id) {
+          const { data: refreshed } = await supabase.auth.refreshSession();
+          session = refreshed.session;
+        }
+        effectiveWsId = session?.user?.id || '';
       }
-      const currentUid = session?.user?.id;
-      const effectiveWsId = workspaceId || currentUid;
       if (!effectiveWsId) return;
       resolvedWs = true;
 
-      const overview = await authFetchJson(
-        `/api/workspace/team/overview?workspace_id=${encodeURIComponent(effectiveWsId)}${forceFresh ? '&fresh=1' : ''}`
-      );
+      let overview: any = null;
+      try {
+        overview = await authFetchJson(
+          `/api/workspace/team/overview?workspace_id=${encodeURIComponent(effectiveWsId)}${forceFresh ? '&fresh=1' : ''}`
+        );
+      } catch (ovErr) {
+        console.warn('[WorkspaceTeamPage] overview fallback to /api/workspace/members:', ovErr);
+        const fb = await authFetchJson(`/api/workspace/members?workspace_id=${encodeURIComponent(effectiveWsId)}`);
+        if (fb?.success && Array.isArray(fb.members)) {
+          overview = { success: true, members: fb.members, summaryMap: {}, records: [], hiddenMemberIds: [], hasPin: false };
+        }
+      }
       if (overview?.success && Array.isArray(overview.members)) {
         const nextMembers: TeamMember[] = overview.members;
         const nextSummary = overview.summaryMap || {};

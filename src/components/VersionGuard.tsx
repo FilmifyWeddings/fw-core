@@ -26,7 +26,7 @@ function isPublicRoute(pathname: string): boolean {
 // Auto-purge legacy pre-repair cached data from localStorage across all clients
 if (typeof window !== 'undefined') {
   try {
-    const BUILD_STAMP = '20261127_live_repair_v3';
+    const BUILD_STAMP = '20261128_team_fix_v2';
     if (localStorage.getItem('sc_last_purged_build') !== BUILD_STAMP) {
       const keys = [];
       for (let i = 0; i < localStorage.length; i++) {
