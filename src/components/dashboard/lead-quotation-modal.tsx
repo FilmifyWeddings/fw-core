@@ -11,11 +11,15 @@ import {
 } from 'lucide-react';
 import { Lead } from '@/types';
 import { supabase } from '@/lib/supabase';
-import { AiQuotationModal } from './ai-quotation-modal';
 import StudioCoreLiquidLoader from '@/components/ui/StudioCoreLiquidLoader';
 import { broadcastQuotationSync } from '@/lib/realtime-quotations';
 import { DEFAULT_AIRY_PROPOSAL, isPlaceholderCoupleName } from '@/lib/quotation-defaults';
 import { pruneDocumentForListCache, safeLocalStorageSet, safeSessionStorageSet } from '@/lib/storage-safety';
+
+const AiQuotationModal = dynamic(
+  () => import('./ai-quotation-modal').then(m => m.AiQuotationModal),
+  { ssr: false }
+);
 
 const QuotationDocumentCanvas = dynamic(
   () => import('@/components/QuotationDocumentCanvas'),
@@ -25,7 +29,8 @@ import {
   QuotationTemplateSelector, 
   StudioTemplateItem, 
   getSynchronousCachedTemplates, 
-  persistTemplatesToCache 
+  persistTemplatesToCache,
+  prefetchStudioTemplates
 } from './quotation-template-selector';
 
 interface QuotationVersionItem {
@@ -138,16 +143,18 @@ export function LeadQuotationModal({
 
       let targetFinalId = lead.final_quotation_id || (lead as any).raw_payload?.final_quotation_id;
       let summaryFinalVersion: number | undefined = undefined;
+      let summaryEntry: any = null;
 
       if (typeof window !== 'undefined') {
         try {
           const summaryMapStr = localStorage.getItem('sc_quotation_summary_map');
           if (summaryMapStr) {
             const summaryMap = JSON.parse(summaryMapStr);
-            if (summaryMap[lead.id]?.hasFinal) {
-              summaryFinalVersion = summaryMap[lead.id]?.finalVersion;
-              if (!targetFinalId && summaryMap[lead.id]?.versions?.length > 0) {
-                const fv = summaryMap[lead.id].versions.find((v: any) => v.is_final);
+            summaryEntry = summaryMap?.[lead.id] || null;
+            if (summaryEntry?.hasFinal) {
+              summaryFinalVersion = summaryEntry?.finalVersion;
+              if (!targetFinalId && summaryEntry?.versions?.length > 0) {
+                const fv = summaryEntry.versions.find((v: any) => v.is_final);
                 if (fv?.template_id) targetFinalId = fv.template_id;
               }
             }
@@ -167,16 +174,7 @@ export function LeadQuotationModal({
       }
 
       // Gather all potential sources of cached versions for instant 0ms render
-      let localSummaryVersions: any[] = [];
-      try {
-        const smStr = localStorage.getItem('sc_quotation_summary_map');
-        if (smStr) {
-          const parsedSm = JSON.parse(smStr);
-          if (parsedSm[lead.id]?.versions && Array.isArray(parsedSm[lead.id].versions)) {
-            localSummaryVersions = parsedSm[lead.id].versions;
-          }
-        }
-      } catch (_) {}
+      const localSummaryVersions: any[] = Array.isArray(summaryEntry?.versions) ? summaryEntry.versions : [];
 
       let localQuotesCache: any[] = [];
       try {
@@ -238,18 +236,9 @@ export function LeadQuotationModal({
       );
 
       // Check if we already know this lead has 0 quotations from summary map or lead payload
-      let knownHasZero = false;
-      try {
-        const smStr = localStorage.getItem('sc_quotation_summary_map');
-        if (smStr) {
-          const parsedSm = JSON.parse(smStr);
-          if (parsedSm[lead.id]) {
-            if (parsedSm[lead.id].count === 0 || (Array.isArray(parsedSm[lead.id].versions) && parsedSm[lead.id].versions.length === 0)) {
-              knownHasZero = true;
-            }
-          }
-        }
-      } catch (_) {}
+      const knownHasZero = Boolean(
+        summaryEntry && (summaryEntry.count === 0 || (Array.isArray(summaryEntry.versions) && summaryEntry.versions.length === 0))
+      );
 
       const hasDefinitiveZeroKnowledge = knownHasZero || (Array.isArray(initialQuotations) && initialQuotations.length === 0 && Boolean((lead as any).raw_payload || lead.id));
 
@@ -297,11 +286,7 @@ export function LeadQuotationModal({
 
   const loadAvailableTemplates = async () => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const currentUserId = session?.user?.id || lead?.workspace_id || '';
-      const token = session?.access_token || '';
-
-      const cached = getSynchronousCachedTemplates(currentUserId);
+      const cached = getSynchronousCachedTemplates(lead?.workspace_id);
       if (cached.length > 0) {
         setAvailableTemplates(cached);
         const activeDefault = cached.find((t: StudioTemplateItem) => t.is_default) || cached[0];
@@ -310,25 +295,14 @@ export function LeadQuotationModal({
         }
       }
 
-      const headers: Record<string, string> = {};
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-      if (session?.user?.email) headers['x-user-email'] = session.user.email;
-
-      const res = await fetch(`/api/quotation-templates?workspace_id=${currentUserId}`, { headers });
-      const json = await res.json().catch(() => ({}));
-
-      if (json.success && Array.isArray(json.templates) && json.templates.length > 0) {
-        setAvailableTemplates(json.templates);
-        persistTemplatesToCache(json.templates, currentUserId);
-        if (lead?.workspace_id && lead.workspace_id !== currentUserId) {
-          persistTemplatesToCache(json.templates, lead.workspace_id);
-        }
-
+      const fresh = await prefetchStudioTemplates(lead?.workspace_id);
+      if (Array.isArray(fresh) && fresh.length > 0) {
+        setAvailableTemplates(fresh);
         setSelectedTemplateId(prev => {
-          if (prev && json.templates.some((t: StudioTemplateItem) => t.id === prev)) {
+          if (prev && fresh.some((t: StudioTemplateItem) => t.id === prev)) {
             return prev; // Strictly preserve current user selection!
           }
-          const activeDefault = json.templates.find((t: StudioTemplateItem) => t.is_default) || json.templates[0];
+          const activeDefault = fresh.find((t: StudioTemplateItem) => t.is_default) || fresh[0];
           return activeDefault ? activeDefault.id : prev;
         });
       }
@@ -1063,21 +1037,23 @@ export function LeadQuotationModal({
 
   return (
     <>
-      <AnimatePresence mode="wait">
+      <AnimatePresence>
         {isOpen && lead && (
           <motion.div
             key="lead-quotation-modal-overlay"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[1000001] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs select-none"
+            transition={{ duration: 0.12, ease: 'easeOut' }}
+            className="fixed inset-0 z-[1000001] flex items-center justify-center p-4 bg-black/65 select-none"
           >
             <motion.div
               key="lead-quotation-modal-dialog"
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              initial={{ opacity: 0, scale: 0.97, y: 6 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              exit={{ opacity: 0, scale: 0.97, y: 6 }}
+              transition={{ duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
+              style={{ willChange: 'transform, opacity' }}
               className="relative w-full max-w-md bg-white dark:bg-[#1C1A18] rounded-3xl shadow-2xl overflow-hidden border border-zinc-200 dark:border-zinc-800 flex flex-col max-h-[85vh]"
             >
               {/* Header */}

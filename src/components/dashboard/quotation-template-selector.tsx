@@ -5,9 +5,8 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDown, Check, Sparkles, LayoutTemplate, Star } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import QuotationDocumentCanvas from '@/components/QuotationDocumentCanvas';
-import { preloadActiveFont } from '@/lib/font-loader';
 import { DEFAULT_AIRY_PROPOSAL } from '@/lib/quotation-defaults';
+import { getThemeFromKey } from '@/lib/quotation-theme';
 
 export interface StudioTemplateItem {
   id: string;
@@ -20,6 +19,23 @@ export interface StudioTemplateItem {
 
 // Global in-memory cache for instant 0ms access across modals and pages
 const memoryTemplatesCache: Record<string, StudioTemplateItem[]> = {};
+const inflightPrefetchMap = new Map<string, Promise<StudioTemplateItem[]>>();
+const lastFetchTimestampMap = new Map<string, number>();
+const prewarmedImageUrls = new Set<string>();
+let lastPersistedSignature = '';
+
+function prewarmTemplateCoverImages(templates: StudioTemplateItem[]) {
+  if (typeof window === 'undefined' || !Array.isArray(templates)) return;
+  for (const t of templates) {
+    const url = t?.content_json?.cover?.photoUrl || t?.content_json?.cover?.photo;
+    if (typeof url === 'string' && url.length > 0 && !url.startsWith('data:') && !prewarmedImageUrls.has(url)) {
+      prewarmedImageUrls.add(url);
+      const img = new window.Image();
+      img.decoding = 'async';
+      img.src = url;
+    }
+  }
+}
 
 /**
  * Synchronously retrieves cached templates from Memory, localStorage, or sessionStorage.
@@ -96,47 +112,68 @@ export function persistTemplatesToCache(templates: StudioTemplateItem[], workspa
   const wsKey = workspaceId || 'default';
   memoryTemplatesCache[wsKey] = templates;
   memoryTemplatesCache['default'] = templates;
+  prewarmTemplateCoverImages(templates);
 
   if (typeof window !== 'undefined') {
     try {
       const activeUid = workspaceId || localStorage.getItem('wg_last_active_user_id') || localStorage.getItem('sc_active_workspace_id') || '';
       const localKey = activeUid ? `studio_templates_cache_${activeUid}` : 'studio_templates_cache';
       const serialized = JSON.stringify(templates);
+      const sig = `${localKey}:${serialized.length}:${templates.map(t => t.id).join(',')}`;
+      if (sig === lastPersistedSignature) return;
+      lastPersistedSignature = sig;
+
       localStorage.setItem(localKey, serialized);
-      sessionStorage.setItem(localKey, serialized);
-      // Guarantee global fallback keys are also synced (0ms cross-workspace availability)
       localStorage.setItem('studio_templates_cache', serialized);
       sessionStorage.setItem('studio_templates_cache', serialized);
-      localStorage.setItem('wg_quotations_cache', serialized);
     } catch (_) {}
   }
 }
 
 /**
- * Asynchronously prefetches quotation templates in the background.
+ * Asynchronously prefetches quotation templates in the background with 60s dedupe.
  */
-export async function prefetchStudioTemplates(workspaceId?: string): Promise<StudioTemplateItem[]> {
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    const currentUserId = workspaceId || session?.user?.id || '';
-    const token = session?.access_token || '';
-
-    const headers: Record<string, string> = {};
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    if (session?.user?.email) headers['x-user-email'] = session.user.email;
-
-    const res = await fetch(`/api/quotation-templates?workspace_id=${currentUserId}`, { headers });
-    if (!res.ok) return getSynchronousCachedTemplates(currentUserId);
-
-    const json = await res.json().catch(() => ({}));
-    if (json.success && Array.isArray(json.templates) && json.templates.length > 0) {
-      persistTemplatesToCache(json.templates, currentUserId);
-      return json.templates;
-    }
-  } catch (err) {
-    console.warn('[QuotationTemplateSelector] Prefetch warning:', err);
+export async function prefetchStudioTemplates(workspaceId?: string, forceRefresh = false): Promise<StudioTemplateItem[]> {
+  const wsKey = workspaceId || 'default';
+  const lastTs = lastFetchTimestampMap.get(wsKey) || 0;
+  if (!forceRefresh && Date.now() - lastTs < 60_000 && memoryTemplatesCache[wsKey]?.length > 0) {
+    return memoryTemplatesCache[wsKey];
   }
-  return getSynchronousCachedTemplates(workspaceId);
+
+  const existingInflight = inflightPrefetchMap.get(wsKey);
+  if (!forceRefresh && existingInflight) {
+    return existingInflight;
+  }
+
+  const task = (async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const currentUserId = workspaceId || session?.user?.id || '';
+      const token = session?.access_token || '';
+
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      if (session?.user?.email) headers['x-user-email'] = session.user.email;
+
+      const res = await fetch(`/api/quotation-templates?workspace_id=${currentUserId}`, { headers });
+      if (!res.ok) return getSynchronousCachedTemplates(currentUserId);
+
+      const json = await res.json().catch(() => ({}));
+      if (json.success && Array.isArray(json.templates) && json.templates.length > 0) {
+        lastFetchTimestampMap.set(wsKey, Date.now());
+        persistTemplatesToCache(json.templates, currentUserId);
+        return json.templates;
+      }
+    } catch (err) {
+      console.warn('[QuotationTemplateSelector] Prefetch warning:', err);
+    } finally {
+      inflightPrefetchMap.delete(wsKey);
+    }
+    return getSynchronousCachedTemplates(workspaceId);
+  })();
+
+  inflightPrefetchMap.set(wsKey, task);
+  return task;
 }
 
 /**
@@ -174,9 +211,9 @@ class ThumbnailErrorBoundary extends Component<ThumbnailErrorBoundaryProps, Thum
 }
 
 /**
- * 1:1 FIRST PAGE DESIGN THUMBNAIL (MEMOIZED FOR 0MS RESPONSIVENESS)
- * Renders the exact first page design (canvas) of the quotation template,
- * identical to the Cards in the Quotations Gallery (/workspace/quotations).
+ * 1:1 FIRST PAGE DESIGN THUMBNAIL (ULTRA-LIGHTWEIGHT 0MS RENDERER)
+ * Pure CSS/HTML miniature cover preview matching the exact theme palette,
+ * cover photo, frame shape, and typography with zero heavy canvas overhead.
  */
 export const TemplateThumbnail = React.memo(function TemplateThumbnail({
   contentJson,
@@ -189,9 +226,6 @@ export const TemplateThumbnail = React.memo(function TemplateThumbnail({
   size?: 'xs' | 'sm' | 'md' | 'lg';
   className?: string;
 }) {
-  const [, setFontsReady] = useState(false);
-
-  // Normalize full document data for QuotationDocumentCanvas
   const fullDocData = useMemo(() => {
     let doc = contentJson;
     if (typeof doc === 'string') {
@@ -206,7 +240,7 @@ export const TemplateThumbnail = React.memo(function TemplateThumbnail({
       const coverPhoto = doc.cover?.photoUrl || doc.cover?.photo || fallbackPhoto;
       let coupleName = doc.cover?.coupleName;
       if (!coupleName || coupleName === 'YASH & TWINKLE' || coupleName === 'Valued Client') {
-        coupleName = isSys ? 'Groom\n& \nBride' : (title || 'Rahul & Neha');
+        coupleName = isSys ? 'Groom & Bride' : (title || 'Rahul & Neha');
       }
 
       return {
@@ -228,10 +262,8 @@ export const TemplateThumbnail = React.memo(function TemplateThumbnail({
       secondaryFont: 'Plus Jakarta Sans',
       designName: title || 'Premium',
       cover: {
-        coupleName: 'Groom\n& \nBride',
+        coupleName: 'Groom & Bride',
         eventType: 'Wedding',
-        weddingDate: 'December 14, 2026',
-        locationName: 'MUMBAI',
         brandName: 'Filmify Weddings',
         frameShape: 'arch',
         bgOpacity: 19,
@@ -240,80 +272,109 @@ export const TemplateThumbnail = React.memo(function TemplateThumbnail({
     };
   }, [contentJson, title]);
 
-  // Preload custom fonts in background
-  useEffect(() => {
-    let active = true;
-    const fontsToLoad = [fullDocData.primaryFont, fullDocData.secondaryFont].filter(Boolean);
-    if (fontsToLoad.length > 0) {
-      Promise.all(fontsToLoad.map(f => preloadActiveFont(f)))
-        .then(() => { if (active) setFontsReady(true); })
-        .catch(() => {});
-    }
-    return () => { active = false; };
-  }, [fullDocData.primaryFont, fullDocData.secondaryFont]);
+  const themeTokens = useMemo(() => {
+    const themeKey = fullDocData?.theme || fullDocData?.look || 'cyprus-sand-dune';
+    const base = getThemeFromKey(themeKey);
+    return {
+      bg: fullDocData?.customColors?.pageBg || base?.background || '#F0EDE5',
+      text: fullDocData?.customColors?.text || base?.text || '#004643',
+      kicker: fullDocData?.customColors?.kicker || base?.kicker || '#004643',
+    };
+  }, [fullDocData]);
 
-  const themeName = fullDocData?.theme || fullDocData?.look || '';
-  const bgGradient = useMemo(() => {
-    const lower = String(themeName).toLowerCase();
-    if (lower.includes('cyprus')) return 'from-stone-900 to-amber-950 text-amber-200';
-    if (lower.includes('emerald') || lower.includes('forest')) return 'from-emerald-950 to-teal-900 text-emerald-200';
-    if (lower.includes('royal') || lower.includes('blue') || lower.includes('navy')) return 'from-blue-950 to-indigo-950 text-blue-200';
-    if (lower.includes('rose') || lower.includes('ruby')) return 'from-rose-950 to-pink-950 text-rose-200';
-    if (lower.includes('sand') || lower.includes('dune')) return 'from-amber-900 to-stone-900 text-amber-100';
-    return 'from-zinc-800 to-zinc-950 text-zinc-300';
-  }, [themeName]);
-
-  // Precise A4 aspect ratio dimensions (794 x 1123, ratio ~0.707)
+  // Precise A4 aspect ratio dimensions (ratio ~0.707)
   const sizeConfigs = {
-    xs: { w: 30, h: 42, scale: 30 / 794 },
-    sm: { w: 40, h: 56, scale: 40 / 794 },
-    md: { w: 56, h: 79, scale: 56 / 794 },
-    lg: { w: 72, h: 102, scale: 72 / 794 }
+    xs: { w: 30, h: 42, titleSize: '4px', subSize: '3px', imgW: 16, imgH: 18, pad: '3px' },
+    sm: { w: 40, h: 56, titleSize: '5px', subSize: '3.5px', imgW: 22, imgH: 25, pad: '4px' },
+    md: { w: 56, h: 79, titleSize: '6.5px', subSize: '4.5px', imgW: 32, imgH: 36, pad: '5px' },
+    lg: { w: 72, h: 102, titleSize: '8px', subSize: '5.5px', imgW: 42, imgH: 48, pad: '6px' }
   };
 
   const cfg = sizeConfigs[size] || sizeConfigs.md;
+  const cover = fullDocData.cover || {};
+  const photoUrl = cover.photoUrl || cover.photo || '';
+  const frameShape = cover.frameShape || 'arch';
+  const isBgMode = frameShape === 'background';
 
-  const fallbackMarkup = (
-    <div
-      style={{ width: `${cfg.w}px`, height: `${cfg.h}px` }}
-      className={`relative rounded-md overflow-hidden border border-amber-500/40 bg-gradient-to-b ${bgGradient} shrink-0 shadow-2xs flex flex-col items-center justify-between p-1 select-none ${className}`}
-    >
-      <div className="w-full flex items-center justify-center pt-0.5">
-        <Sparkles className="w-2.5 h-2.5 text-amber-300 opacity-90" />
-      </div>
-      <div className="w-full text-center px-0.5">
-        <p className="font-serif font-bold text-[8px] leading-tight truncate tracking-tight text-white/95">
-          {title || fullDocData.designName || 'Quotation'}
-        </p>
-        <span className="text-[6px] uppercase tracking-widest text-amber-300/80 font-black block scale-90">
-          {fullDocData?.look || 'Design'}
-        </span>
-      </div>
-      <div className="w-2/3 h-[1px] bg-amber-400/50 rounded-full mb-0.5" />
-    </div>
-  );
+  const frameRadiusClass =
+    frameShape === 'circle'
+      ? 'rounded-full'
+      : frameShape === 'square'
+      ? 'rounded-none'
+      : frameShape === 'rounded'
+      ? 'rounded-sm'
+      : 'rounded-t-full';
+
+  const coupleDisplay = String(cover.coupleName || title || 'Design').replace(/\n+/g, ' ').trim();
+  const brandDisplay = String(cover.brandName || 'STUDIO').trim();
 
   return (
-    <ThumbnailErrorBoundary fallback={fallbackMarkup}>
-      <div
-        style={{ width: `${cfg.w}px`, height: `${cfg.h}px` }}
-        className={`relative rounded-md overflow-hidden bg-slate-100 dark:bg-zinc-800 border border-zinc-200/90 dark:border-zinc-700/90 shrink-0 shadow-xs group-hover:border-amber-500/60 transition-all select-none ${className}`}
-      >
-        <div
-          className="absolute top-0 left-0 origin-top-left pointer-events-none select-none"
-          style={{
-            width: '794px',
-            height: '1123px',
-            transform: `scale(${cfg.scale})`,
-            transformOrigin: 'top left',
-            backfaceVisibility: 'hidden',
-            WebkitBackfaceVisibility: 'hidden'
-          }}
+    <div
+      style={{
+        width: `${cfg.w}px`,
+        height: `${cfg.h}px`,
+        backgroundColor: themeTokens.bg,
+        color: themeTokens.text,
+        padding: cfg.pad
+      }}
+      className={`relative rounded-md overflow-hidden border border-zinc-200/90 dark:border-zinc-700/90 shrink-0 shadow-xs group-hover:border-amber-500/60 transition-colors select-none flex flex-col items-center justify-between text-center ${className}`}
+    >
+      {/* Background photo mode */}
+      {isBgMode && photoUrl && (
+        <img
+          src={photoUrl}
+          alt=""
+          loading="eager"
+          decoding="async"
+          style={{ opacity: Math.max(0.15, Math.min(0.85, (cover.bgOpacity ?? 40) / 100)) }}
+          className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+        />
+      )}
+
+      {/* Top couple/event title */}
+      <div className="relative z-10 w-full flex flex-col items-center leading-none pt-0.5">
+        <span
+          style={{ fontSize: cfg.titleSize, fontFamily: fullDocData.primaryFont }}
+          className="font-black uppercase tracking-wider truncate max-w-full leading-tight"
         >
-          <QuotationDocumentCanvas documentData={fullDocData} onlyFirstPage={true} />
-        </div>
+          {coupleDisplay}
+        </span>
+        <span
+          style={{ fontSize: cfg.subSize, color: themeTokens.kicker }}
+          className="uppercase tracking-widest opacity-80 truncate max-w-full leading-none mt-[1px]"
+        >
+          {(cover.eventType || 'Wedding').toUpperCase()}
+        </span>
       </div>
-    </ThumbnailErrorBoundary>
+
+      {/* Center framed photo */}
+      {!isBgMode && photoUrl ? (
+        <div
+          style={{ width: `${cfg.imgW}px`, height: `${cfg.imgH}px`, borderColor: `${themeTokens.text}33` }}
+          className={`relative z-10 overflow-hidden border shrink-0 my-auto ${frameRadiusClass}`}
+        >
+          <img
+            src={photoUrl}
+            alt=""
+            loading="eager"
+            decoding="async"
+            className="w-full h-full object-cover pointer-events-none"
+          />
+        </div>
+      ) : (
+        <div className="relative z-10 w-3/4 h-[1px] opacity-30 my-auto" style={{ backgroundColor: themeTokens.text }} />
+      )}
+
+      {/* Bottom brand */}
+      <div className="relative z-10 w-full truncate leading-none pb-0.5">
+        <span
+          style={{ fontSize: cfg.subSize, fontFamily: fullDocData.secondaryFont }}
+          className="uppercase font-bold tracking-widest opacity-85 truncate block"
+        >
+          {brandDisplay}
+        </span>
+      </div>
+    </div>
   );
 });
 
@@ -500,12 +561,10 @@ export function QuotationTemplateSelector({
     window.addEventListener('mousedown', handleClickOutside);
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('resize', updatePopoverPosition);
-    window.addEventListener('scroll', updatePopoverPosition, true);
     return () => {
       window.removeEventListener('mousedown', handleClickOutside);
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('resize', updatePopoverPosition);
-      window.removeEventListener('scroll', updatePopoverPosition, true);
     };
   }, [isOpen, updatePopoverPosition]);
 
@@ -514,18 +573,19 @@ export function QuotationTemplateSelector({
       {isOpen && (
         <motion.div
           ref={portalRef}
-          initial={{ opacity: 0, y: popoverRect.openDirection === 'top' ? 6 : -6, scale: 0.97 }}
+          initial={{ opacity: 0, y: popoverRect.openDirection === 'top' ? 4 : -4, scale: 0.98 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: popoverRect.openDirection === 'top' ? 4 : -4, scale: 0.98 }}
-          transition={{ duration: 0.15, ease: 'easeOut' }}
+          exit={{ opacity: 0, y: popoverRect.openDirection === 'top' ? 3 : -3, scale: 0.98 }}
+          transition={{ duration: 0.09, ease: 'easeOut' }}
           style={{
             position: 'fixed',
             zIndex: 1000010,
             left: `${popoverRect.left}px`,
             width: `${popoverRect.width}px`,
+            willChange: 'transform, opacity',
             ...(popoverRect.bottom !== undefined ? { bottom: `${popoverRect.bottom}px` } : { top: `${popoverRect.top ?? 0}px` })
           }}
-          className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700/90 rounded-2xl shadow-2xl p-1.5 backdrop-blur-xl"
+          className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700/90 rounded-2xl shadow-2xl p-1.5"
         >
           {/* Popover Header */}
           <div className="px-2.5 py-1.5 flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800/80 mb-1">
