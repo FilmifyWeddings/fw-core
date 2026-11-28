@@ -23,6 +23,8 @@ export interface TeamMemberCardProps {
   handleEditMember: (member: any) => void;
   handleDeleteMember: (memberId: string) => void;
   handleOpenVendorDeliverables?: (member: any) => void;
+  isHidden?: boolean;
+  handleToggleHideMember?: (member: any) => void;
 }
 
 export default function TeamMemberCard({
@@ -34,7 +36,19 @@ export default function TeamMemberCard({
   handleEditMember,
   handleDeleteMember,
   handleOpenVendorDeliverables,
+  isHidden = false,
+  handleToggleHideMember,
 }: TeamMemberCardProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [menuOpen]);
   const isFreelancer = member.type === 'freelancer' || member.primary_type === 'FREELANCER' || member.member_types?.includes('FREELANCER');
   const isPartner = member.type === 'partner' || member.primary_type === 'PARTNER' || member.member_types?.includes('PARTNER');
   const typeLabel = isPartner ? 'Partner' : isFreelancer ? 'Freelancer' : (member.type || member.primary_type || 'In-House');

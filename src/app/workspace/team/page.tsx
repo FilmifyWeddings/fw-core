@@ -13,6 +13,7 @@ import {
   Eye, EyeOff, Lock, Unlock, X, Pencil, Users, DollarSign, Bell
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { authFetch, authFetchJson } from '@/lib/client-auth-fetch';
 import { useWorkspace } from '@/lib/context/BhamstraContext';
 import { useWorkspaceData } from '@/context/WorkspaceDataContext';
 import AddTeamMemberModal from '@/app/team-manager/components/AddTeamMemberModal';
@@ -484,7 +485,6 @@ export default function WorkspaceTeamPage() {
     // 2. Authoritative async save via /api/workspace/members (bypasses RLS/session races)
     (async () => {
       try {
-        const { authFetch, authFetchJson } = await import('@/lib/client-auth-fetch');
         const { data: { session } } = await supabase.auth.getSession();
         const currentUid = session?.user?.id || (typeof window !== 'undefined' ? localStorage.getItem('sc_user_id') : null);
         const storedWs = typeof window !== 'undefined' ? localStorage.getItem('sc_active_workspace_id') : null;
