@@ -684,7 +684,7 @@ export default function WorkspaceTeamPage() {
 
   const handleSelectFilterTab = (tabId: string) => {
     if (tabId === 'Hidden') {
-      if (hasHidePin && !hiddenUnlocked) {
+      if (!hiddenUnlocked) {
         setPinInput('');
         setPinError('');
         setShowPinModal(true);
@@ -709,21 +709,42 @@ export default function WorkspaceTeamPage() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const effectiveWsId = workspaceId || session?.user?.id;
-      const res = await authFetchJson('/api/workspace/team/pin', {
-        method: 'POST',
-        body: JSON.stringify({
-          action: 'verify_pin',
-          workspace_id: effectiveWsId,
-          pin: pinInput,
-        }),
-      });
-      if (res?.valid) {
-        setHiddenUnlocked(true);
-        setShowPinModal(false);
-        setSelectedFilter('Hidden');
-        setVisibleCount(15);
+      if (!hasHidePin) {
+        const res = await authFetchJson('/api/workspace/team/pin', {
+          method: 'POST',
+          body: JSON.stringify({
+            action: 'set_initial_pin',
+            workspace_id: effectiveWsId,
+            pin: pinInput,
+          }),
+        });
+        if (res?.success) {
+          setHasHidePin(true);
+          memCachedHasPin = true;
+          setHiddenUnlocked(true);
+          setShowPinModal(false);
+          setSelectedFilter('Hidden');
+          setVisibleCount(15);
+        } else {
+          setPinError(res?.error || 'Failed to set PIN.');
+        }
       } else {
-        setPinError(res?.error || 'Incorrect PIN.');
+        const res = await authFetchJson('/api/workspace/team/pin', {
+          method: 'POST',
+          body: JSON.stringify({
+            action: 'verify_pin',
+            workspace_id: effectiveWsId,
+            pin: pinInput,
+          }),
+        });
+        if (res?.valid) {
+          setHiddenUnlocked(true);
+          setShowPinModal(false);
+          setSelectedFilter('Hidden');
+          setVisibleCount(15);
+        } else {
+          setPinError(res?.error || 'Incorrect PIN.');
+        }
       }
     } catch (err: any) {
       setPinError(err?.message || 'Incorrect PIN. Please try again.');
@@ -924,6 +945,39 @@ export default function WorkspaceTeamPage() {
   }, [selectedFilter, selectedRole, searchQuery, financePeriod, customStartDate, customEndDate]);
 
   // Aggregate Financial Totals (Filterable by All Time, Month, Year, Custom Date)
+  // In 'All' (All Crew), include hidden members' amounts in Studio Total while keeping their rows hidden.
+  // In 'Hidden', show only hidden members' totals.
+  const overviewMembersForTotals = useMemo(() => {
+    if (selectedFilter !== 'All') return filteredMembers;
+    const hiddenSet = new Set(hiddenMemberIds);
+    const hiddenMatching = members.filter((member) => {
+      if (!hiddenSet.has(member.id)) return false;
+      if (selectedRole && selectedRole !== 'all' && selectedRole !== 'All Roles') {
+        const targetRole = selectedRole.trim().toLowerCase();
+        const memberRoles = Array.isArray(member.roles) && member.roles.length > 0
+          ? member.roles.map((r: string) => String(r).trim().toLowerCase())
+          : [String(member.role || member.primary_role || '').trim().toLowerCase()];
+        if (!memberRoles.some((r: string) => r === targetRole || r.includes(targetRole))) return false;
+      }
+      if (searchQuery && searchQuery.trim() !== '') {
+        const q = searchQuery.trim().toLowerCase();
+        const nameMatch = (member.name || '').toLowerCase().includes(q);
+        const phoneMatch = (member.phone || member.phone_number || '').includes(q);
+        const emailMatch = (member.email || '').toLowerCase().includes(q);
+        const rolesMatch = Array.isArray(member.roles) && member.roles.length > 0
+          ? member.roles.some((r: string) => String(r).toLowerCase().includes(q))
+          : String(member.role || member.primary_role || '').toLowerCase().includes(q);
+        if (!nameMatch && !phoneMatch && !emailMatch && !rolesMatch) return false;
+      }
+      if (periodMemberStats !== null) {
+        const stats = periodMemberStats[member.id];
+        if (!stats || (stats.total_agreed === 0 && stats.total_paid === 0 && stats.total_balance === 0 && stats.count === 0)) return false;
+      }
+      return true;
+    });
+    return hiddenMatching.length > 0 ? [...filteredMembers, ...hiddenMatching] : filteredMembers;
+  }, [selectedFilter, filteredMembers, members, hiddenMemberIds, selectedRole, searchQuery, periodMemberStats]);
+
   const allTeamFinancialTotals = useMemo(() => {
     // Instant 0ms Fast-Path: When viewing 'all' or before aggregateRecords load from network
     // Computes directly from memberFinancials in memory without waiting or requiring scrolling!
@@ -935,7 +989,7 @@ export default function WorkspaceTeamPage() {
       let settledCount = 0;
       let pendingCount = 0;
 
-      filteredMembers.forEach((m) => {
+      overviewMembersForTotals.forEach((m) => {
         const fin = memberFinancials[m.id];
         const agreed = fin?.total_agreed !== undefined ? Number(fin.total_agreed) : (Number(m.commercial_agreed) || 0);
         const paid = fin?.total_paid !== undefined ? Number(fin.total_paid) : (Number(m.commercial_paid) || 0);
@@ -971,8 +1025,8 @@ export default function WorkspaceTeamPage() {
     const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const prevYearMonth = prevMonthDate.toISOString().substring(0, 7); // e.g. "2026-09"
 
-    // Cross-reference with filtered members in active directory tab
-    const activeMemberIds = new Set(filteredMembers.map(m => m.id));
+    // Cross-reference with overview members (includes hidden in All Crew, or hidden-only in Hidden tab)
+    const activeMemberIds = new Set(overviewMembersForTotals.map(m => m.id));
 
     const filtered = aggregateRecords.filter((rec: any) => {
       if (!activeMemberIds.has(rec.member_id)) return false;
@@ -999,7 +1053,7 @@ export default function WorkspaceTeamPage() {
       pendingCount,
       percent,
     };
-  }, [aggregateRecords, filteredMembers, memberFinancials, financePeriod, financeViewMode, matchesSelectedPeriod]);
+  }, [aggregateRecords, overviewMembersForTotals, memberFinancials, financePeriod, financeViewMode, matchesSelectedPeriod]);
 
   // Metrics (exclude hidden members from normal tabs)
   const visibleMembersList = members.filter(m => !hiddenMemberIds.includes(m.id));
@@ -1781,8 +1835,14 @@ export default function WorkspaceTeamPage() {
                   <Lock className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-black text-zinc-900">Enter Security PIN</h3>
-                  <p className="text-[11px] text-zinc-500">Unlock hidden team members &amp; commercials</p>
+                  <h3 className="text-sm font-black text-zinc-900">
+                    {hasHidePin ? 'Enter Security PIN' : 'Set Security PIN'}
+                  </h3>
+                  <p className="text-[11px] text-zinc-500">
+                    {hasHidePin
+                      ? 'Unlock hidden team members & commercials'
+                      : 'Create a 4–6 digit PIN to lock hidden members'}
+                  </p>
                 </div>
               </div>
               <button type="button" onClick={() => setShowPinModal(false)} className="text-zinc-400 hover:text-zinc-700 cursor-pointer">
@@ -1816,7 +1876,7 @@ export default function WorkspaceTeamPage() {
                   disabled={pinVerifying}
                   className="px-4 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-bold cursor-pointer disabled:opacity-50"
                 >
-                  {pinVerifying ? 'Verifying...' : 'Unlock'}
+                  {pinVerifying ? (hasHidePin ? 'Verifying...' : 'Saving...') : (hasHidePin ? 'Unlock' : 'Set PIN & Unlock')}
                 </button>
               </div>
             </form>

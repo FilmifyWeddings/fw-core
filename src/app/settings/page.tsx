@@ -355,6 +355,13 @@ export default function SettingsPage() {
     }
   }, []);
 
+  const [navSearch, setNavSearch] = useState('');
+  const [loading, setLoading] = useState(() => !memCachedHasLoadedSettings);
+  const [saving, setSaving] = useState(false);
+  const [saveToast, setSaveToast] = useState<string | null>(null);
+  const [workspaceId, setWorkspaceId] = useState('');
+  const effectiveWsId = workspaceId || contextWsId || userId || '';
+
   useEffect(() => {
     if (!effectiveWsId) return;
     authFetchJson(`/api/workspace/team/pin?workspace_id=${encodeURIComponent(effectiveWsId)}`)
@@ -454,12 +461,6 @@ export default function SettingsPage() {
       setTeamPinBusy(false);
     }
   };
-  const [navSearch, setNavSearch] = useState('');
-  const [loading, setLoading] = useState(() => !memCachedHasLoadedSettings);
-  const [saving, setSaving] = useState(false);
-  const [saveToast, setSaveToast] = useState<string | null>(null);
-  const [workspaceId, setWorkspaceId] = useState('');
-  const effectiveWsId = workspaceId || contextWsId || userId || '';
   const [activeColorPickerId, setActiveColorPickerId] = useState<string | null>(null);
 
   // Profile Settings States
